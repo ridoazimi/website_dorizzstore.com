@@ -101,14 +101,15 @@ function getActiveBadge(expiredAt: string | null) {
   );
 }
 
-const sourceFilters = ["Semua", "lynkid", "manual", "website"];
-const sourceLabels: Record<string, string> = { Semua: "Semua Sumber", lynkid: "Lynk.id", manual: "Manual", website: "Website" };
+const sourceFilters = ["Semua", "lynkid", "manual", "website", "shopee"];
+const sourceLabels: Record<string, string> = { Semua: "Semua Sumber", lynkid: "Lynk.id", manual: "Manual", website: "Website", shopee: "Shopee" };
 
 function getSourceBadge(source: string | null) {
   switch (source) {
     case "manual": return <span className="badge badge-purple">Manual</span>;
     case "website": return <span className="badge badge-warning">Website</span>;
     case "lynkid": return <span className="badge badge-info">Lynk.id</span>;
+    case "shopee": return <span className="badge" style={{ background: "rgba(238, 77, 45, 0.15)", color: "#EE4D2D" }}>Shopee</span>;
     default: return <span className="badge badge-info">Lynk.id</span>;
   }
 }
@@ -146,10 +147,11 @@ export default function TransactionsPage() {
   const [customWAMessage, setCustomWAMessage] = useState<string>("");
   const [showTemplateSettings, setShowTemplateSettings] = useState(false);
   
+  const [products, setProducts] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ success?: boolean; userId?: string; message?: string } | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", whatsapp: "", amount: "", productName: "" });
+  const [form, setForm] = useState({ name: "", email: "", whatsapp: "", amount: "", productName: "", productId: "", source: "Manual", activeDate: new Date().toISOString().split('T')[0], durationDays: 30 });
 
   // State untuk kirim akun setelah transaksi berhasil
   const [accountType, setAccountType] = useState<'mobile' | 'desktop'>('mobile');
@@ -280,6 +282,11 @@ export default function TransactionsPage() {
     fetch("/api/settings").then(r => r.json()).then(d => {
       setSettingsTemplates(d || {});
     }).catch(() => {});
+    
+    fetch("/api/products/list")
+      .then(res => res.json())
+      .then(json => setProducts(json.products || []))
+      .catch(err => console.error("Error fetching products:", err));
   }, []);
 
   function handleLoadMore() {
@@ -312,14 +319,36 @@ export default function TransactionsPage() {
 
   async function handleAddManual() {
     if (!form.name || !form.email || !form.whatsapp) return;
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      setResult({ message: "Email tidak valid (harus mengandung @ dan format yang benar)." });
+      return;
+    }
+
     setSubmitting(true);
     setResult(null);
     setSendResult(null);
     try {
+      // Append current local time to the selected date for purchaseDate (TANGGAL BELI)
+      const now = new Date();
+      // Parse the date string as local time by splitting and creating Date with components
+      const [year, month, day] = form.activeDate.split('-').map(Number);
+      const selectedDate = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+      const purchaseDate = selectedDate.toISOString();
+
       const res = await fetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: form.name, email: form.email, whatsapp: form.whatsapp, amount: parseFloat(form.amount) || 0, productName: form.productName || "CapCut Pro" }),
+        body: JSON.stringify({ 
+          name: form.name, 
+          email: form.email, 
+          whatsapp: form.whatsapp, 
+          amount: parseFloat(form.amount) || 0, 
+          productName: form.productName || "CapCut Pro", 
+          source: form.source, 
+          purchaseDate: purchaseDate,
+          durationDays: form.durationDays || 30
+        }),
       });
       const json = await res.json();
       if (res.ok) {
@@ -396,7 +425,7 @@ export default function TransactionsPage() {
 
   function closeModal() {
     setShowModal(false);
-    setForm({ name: "", email: "", whatsapp: "", amount: "", productName: "" });
+    setForm({ name: "", email: "", whatsapp: "", amount: "", productName: "", productId: "", source: "Manual", activeDate: new Date().toISOString().split('T')[0], durationDays: 30 });
     setResult(null);
     setSendResult(null);
   }
@@ -1547,9 +1576,71 @@ export default function TransactionsPage() {
               ) : (
                 <>
                   <div><label className="form-label">Nama Pelanggan</label><input type="text" className="form-input" placeholder="Nama lengkap" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-                  <div><label className="form-label">Email Pelanggan</label><input type="email" className="form-input" placeholder="email@gmail.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-                  <div><label className="form-label">Nomor WhatsApp</label><input type="text" className="form-input" placeholder="08xxxxxxxxxx" value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} /></div>
-                  <div><label className="form-label">Nama Produk (Opsional)</label><input type="text" className="form-input" placeholder="CapCut Pro PC 1 Bulan" value={form.productName} onChange={(e) => setForm({ ...form, productName: e.target.value })} /></div>
+                  <div><label className="form-label">Email Pelanggan</label><input type="email" className="form-input" placeholder="email@gmail.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} pattern="[^\s@]+@[^\s@]+\.[^\s@]+" /></div>
+                  <div><label className="form-label">Nomor WhatsApp</label><input type="text" className="form-input" placeholder="08xxxxxxxxxx" value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value.replace(/\D/g, '') })} /></div>
+                  <div>
+                    <label className="form-label">Nama Produk (Opsional)</label>
+                    <input 
+                      type="text" 
+                      className="form-input transition-all duration-200 disabled:opacity-40 disabled:bg-slate-950/80 disabled:border-gray-800/50 disabled:text-gray-500 disabled:cursor-not-allowed" 
+                      placeholder="CapCut Pro PC 1 Bulan" 
+                      value={form.productId ? "" : form.productName} 
+                      disabled={!!form.productId}
+                      onChange={(e) => setForm({ ...form, productName: e.target.value })} 
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Produk Terkait</label>
+                    <select 
+                      className="form-input transition-all duration-200 disabled:opacity-40 disabled:bg-slate-950/80 disabled:border-gray-800/50 disabled:text-gray-500 disabled:cursor-not-allowed" 
+                      value={form.productId} 
+                      disabled={!form.productId && !!form.productName}
+                      onChange={(e) => {
+                        const pid = e.target.value;
+                        const p = products.find(prod => prod.id === pid);
+                        setForm({ ...form, productId: pid, productName: p ? p.name : "", durationDays: p ? p.duration : 30 });
+                      }}
+                    >
+                      <option value="">Pilih Produk (Opsional)</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.maxSlots === 2 ? "Desktop" : "Mobile"})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">Sumber</label>
+                    <select
+                      className="form-input"
+                      value={form.source}
+                      onChange={(e) => setForm({ ...form, source: e.target.value })}
+                    >
+                      <option value="Lynk.id">Lynk.id</option>
+                      <option value="Manual">Manual</option>
+                      <option value="Website">Website</option>
+                      <option value="Shopee">Shopee</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="form-label">Tanggal aktif</label>
+                    <input 
+                      type="date" 
+                      className="form-input" 
+                      style={{ colorScheme: "dark" }}
+                      value={form.activeDate} 
+                      onChange={(e) => setForm({ ...form, activeDate: e.target.value })} 
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Durasi (Hari)</label>
+                    <input 
+                      type="number" 
+                      className="form-input" 
+                      placeholder="30" 
+                      value={form.durationDays} 
+                      disabled={!!form.productId}
+                      onChange={(e) => setForm({ ...form, durationDays: parseInt(e.target.value) || 30 })} 
+                    />
+                  </div>
                   <div><label className="form-label">Nominal (Rp)</label><input type="number" className="form-input" placeholder="35000" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
                   {result?.message && <p className="text-sm text-rose-400">{result.message}</p>}
                 </>

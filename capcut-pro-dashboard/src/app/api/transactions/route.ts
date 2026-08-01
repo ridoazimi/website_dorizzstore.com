@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
   if ("error" in auth) return auth.error;
   try {
     const body = await req.json();
-    const { email, name, whatsapp, amount, productName, durationDays: rawDuration = 30 } = body;
+    const { email, name, whatsapp, amount, productName, durationDays: rawDuration = 30, purchaseDate, source } = body;
 
     // Jika nama produk mengandung durasi (misal "1 bulan"), selalu pakai fix 30 hari
     // bukan durationDays dari stok yang bisa salah (mis. 31 hari di bulan Maret)
@@ -155,7 +155,9 @@ export async function POST(req: NextRequest) {
       }
 
       // 3. Hitung tanggal expired garansi (fix days, bukan calendar month)
-      const warrantyExpiredAt = calcWarrantyExpiry(new Date(), durationDays);
+      // Gunakan purchaseDate dari request jika ada, gunakan current date jika tidak
+      const baseDate = purchaseDate ? new Date(purchaseDate) : new Date();
+      const warrantyExpiredAt = calcWarrantyExpiry(baseDate, durationDays);
 
       // 4. Buat transaksi
       const transaction = await tx.transaction.create({
@@ -165,8 +167,10 @@ export async function POST(req: NextRequest) {
           amount: amount || 0,
           productName: productName || null,
           status: "success",
-          source: "manual",
+          source: source || "manual",
+          purchaseDate: purchaseDate ? new Date(purchaseDate) : new Date(),
           warrantyExpiredAt,
+          createdAt: new Date(), // Always set createdAt to current timestamp when form is submitted
         },
         include: {
           user: true,
