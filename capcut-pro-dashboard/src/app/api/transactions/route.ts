@@ -63,8 +63,8 @@ export async function GET(req: NextRequest) {
       where.warrantyExpiredAt = warrantyFilter;
     }
 
-    if (source && source !== "all") {
-      where.source = source;
+    if (source && source !== "all" && source !== "Semua") {
+      where.source = { equals: source, mode: "insensitive" };
     }
 
     const [transactions, total] = await Promise.all([
@@ -134,43 +134,22 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 2. FIX #4: Cari stok akun yang sesuai TIPE PRODUK, available atau masih ada slot
-      // Diurutkan usedSlots ASC supaya akun dengan slot paling sedikit dipilih duluan (round-robin)
-      const candidateAccounts = await tx.stockAccount.findMany({
-        where: {
-          status: "available",
-          productId: matchedProduct?.id, // FIX #4: filter by productId
-          usageType: "sale",
-        },
-        orderBy: [{ usedSlots: "asc" }, { createdAt: "asc" }],
-      });
-
-      // Filter di JS karena maxSlots beda tiap record
-      const availableAccount = candidateAccounts.find(acc =>
-        (acc.usedSlots ?? 0) < (acc.maxSlots ?? 3)
-      ) ?? null;
-
-      if (!availableAccount) {
-        throw new Error(`STOK_HABIS:Stok akun ${detectedProductType} habis! Tidak ada akun tersedia.`);
-      }
-
-      // 3. Hitung tanggal expired garansi (fix days, bukan calendar month)
-      // Gunakan purchaseDate dari request jika ada, gunakan current date jika tidak
+      // 2. Hitung tanggal expired garansi (fix days, bukan calendar month)
       const baseDate = purchaseDate ? new Date(purchaseDate) : new Date();
       const warrantyExpiredAt = calcWarrantyExpiry(baseDate, durationDays);
 
-      // 4. Buat transaksi
+      // 3. Buat transaksi (tanpa auto-assign akun stok, stockAccountId: null)
       const transaction = await tx.transaction.create({
         data: {
           userId: user.id,
-          stockAccountId: availableAccount.id,
+          stockAccountId: null,
           amount: amount || 0,
           productName: productName || null,
           status: "success",
-          source: source || "manual",
-          purchaseDate: purchaseDate ? new Date(purchaseDate) : new Date(),
+          source: source ? source.toLowerCase() : "manual",
+          purchaseDate: baseDate,
           warrantyExpiredAt,
-          createdAt: new Date(), // Always set createdAt to current timestamp when form is submitted
+          createdAt: new Date(),
         },
         include: {
           user: true,
@@ -178,39 +157,18 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // 5. FIX #1: Atomic update slot — updateMany dengan kondisi slot check
-      // Jika ada race condition, updated.count akan 0 dan transaction akan di-rollback
-      const newUsedSlots = (availableAccount.usedSlots ?? 0) + 1;
-      const maxSlots = availableAccount.maxSlots ?? 3;
-      const updated = await tx.stockAccount.updateMany({
-        where: {
-          id: availableAccount.id,
-          usedSlots: { lt: maxSlots }, // Atomic guard: hanya update jika slot masih tersedia
-        },
-        data: {
-          status: newUsedSlots >= maxSlots ? "sold" : "available",
-          usedSlots: { increment: 1 },
-        },
-      });
-      if (updated.count === 0) {
-        throw new Error(`SLOT_PENUH:Slot akun sudah penuh (terjadi bersamaan). Silakan coba lagi.`);
-      }
-
-      // 6. Update status user menjadi active
+      // 4. Update status user menjadi active
       await tx.user.update({
         where: { id: user.id },
         data: { subscriptionStatus: "active", followUpStatus: "none" },
       });
 
-      return { transaction, availableAccount };
+      return { transaction };
     });
 
     return NextResponse.json({
       transaction: result.transaction,
-      account: {
-        email: result.availableAccount.accountEmail,
-        password: result.availableAccount.accountPassword,
-      },
+      userId: result.transaction.userId,
       message: "Data transaksi berhasil ditambahkan, kirim data akun ke pelanggan?",
     }, { status: 201 });
   } catch (error) {

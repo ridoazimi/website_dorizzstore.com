@@ -105,12 +105,14 @@ const sourceFilters = ["Semua", "lynkid", "manual", "website", "shopee"];
 const sourceLabels: Record<string, string> = { Semua: "Semua Sumber", lynkid: "Lynk.id", manual: "Manual", website: "Website", shopee: "Shopee" };
 
 function getSourceBadge(source: string | null) {
-  switch (source) {
+  if (!source) return <span className="badge badge-info">Lynk.id</span>;
+  const s = source.toLowerCase().replace('.', '');
+  switch (s) {
     case "manual": return <span className="badge badge-purple">Manual</span>;
     case "website": return <span className="badge badge-warning">Website</span>;
     case "lynkid": return <span className="badge badge-info">Lynk.id</span>;
-    case "shopee": return <span className="badge" style={{ background: "rgba(238, 77, 45, 0.15)", color: "#EE4D2D" }}>Shopee</span>;
-    default: return <span className="badge badge-info">Lynk.id</span>;
+    case "shopee": return <span className="badge" style={{ background: "rgba(238, 77, 45, 0.15)", color: "#EE4D2D", border: "1px solid rgba(238, 77, 45, 0.3)" }}>Shopee</span>;
+    default: return <span className="badge badge-info">{source}</span>;
   }
 }
 
@@ -150,7 +152,7 @@ export default function TransactionsPage() {
   const [products, setProducts] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ success?: boolean; userId?: string; message?: string } | null>(null);
+  const [result, setResult] = useState<{ success?: boolean; userId?: string; transactionId?: string; message?: string } | null>(null);
   const [form, setForm] = useState({ name: "", email: "", whatsapp: "", amount: "", productName: "", productId: "", source: "Manual", activeDate: new Date().toISOString().split('T')[0], durationDays: 30 });
 
   // State untuk kirim akun setelah transaksi berhasil
@@ -352,7 +354,12 @@ export default function TransactionsPage() {
       });
       const json = await res.json();
       if (res.ok) {
-        setResult({ success: true, userId: json.userId, message: json.message || "Data transaksi berhasil ditambahkan, kirim data akun ke pelanggan?" });
+        setResult({
+          success: true,
+          userId: json.userId || json.transaction?.userId,
+          transactionId: json.transaction?.id,
+          message: json.message || "Data transaksi berhasil ditambahkan, kirim data akun ke pelanggan?"
+        });
         fetchData(1, false);
       } else {
         setResult({ message: json.error || "Gagal membuat transaksi" });
@@ -408,14 +415,18 @@ export default function TransactionsPage() {
         }),
       });
 
-      // 4. Update usedSlots di stok (tandai slot terpakai)
+      // 4. Update usedSlots di stok (tandai slot terpakai) & hubungkan ke transaksi
       await fetch(`/api/stock/${account.id}/use`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: result?.userId }),
-      }).catch(() => {}); // non-blocking jika endpoint belum ada
+        body: JSON.stringify({
+          userId: result?.userId,
+          transactionId: result?.transactionId
+        }),
+      });
 
       setSendResult({ sent: true, accountEmail: account.accountEmail, message: "Akun berhasil dikirim via webhook!" });
+      fetchData(1, false);
     } catch (err) {
       setSendResult({ sent: false, message: `Gagal mengirim: ${err instanceof Error ? err.message : String(err)}` });
     }
