@@ -14,14 +14,16 @@ import {
   X,
   Loader2,
   Image as ImageIcon,
-  Tag
+  Tag,
+  GripVertical
 } from "lucide-react";
 import Image from "next/image";
 import { 
   getProducts, 
   createProduct, 
   updateProduct, 
-  deleteProduct 
+  deleteProduct,
+  reorderProducts
 } from "./actions";
 
 interface Product {
@@ -39,6 +41,7 @@ interface Product {
   stockStatus: string;
   rules: string | null;
   messageTemplate: string | null;
+  sortOrder?: number | null;
 }
 
 
@@ -51,6 +54,9 @@ export default function ProductsPage() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [savingOrder, setSavingOrder] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -183,6 +189,36 @@ export default function ProductsPage() {
     p.category?.toLowerCase().includes(search.toLowerCase())
   );
 
+  const handleDrop = async (targetIndex: number) => {
+    if (draggedIndex === null || draggedIndex === targetIndex || search.trim() !== "") {
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+
+    const updated = [...products];
+    const [draggedItem] = updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, draggedItem);
+
+    // Optimistically update UI order
+    setProducts(updated);
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+
+    // Save new sortOrder payload to database
+    setSavingOrder(true);
+    try {
+      const payload = updated.map((p, idx) => ({ id: p.id, sortOrder: idx }));
+      await reorderProducts(payload);
+    } catch (err) {
+      console.error("Gagal menyimpan urutan produk:", err);
+      alert("Gagal menyimpan urutan produk. Mengembalikan posisi...");
+      fetchProducts();
+    } finally {
+      setSavingOrder(false);
+    }
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
@@ -221,19 +257,19 @@ export default function ProductsPage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  <th className="w-10 text-center">Urutan</th>
                   <th>Produk</th>
                   <th>Kategori</th>
                   <th>Harga</th>
                   <th>Stok</th>
                   <th>Status</th>
                   <th className="text-right">Aksi</th>
-
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-20">
+                    <td colSpan={7} className="text-center py-20">
                       <div className="flex flex-col items-center gap-2">
                         <Loader2 className="animate-spin text-[var(--accent-primary)]" size={32} />
                         <span className="text-[var(--text-secondary)]">Memuat produk...</span>
@@ -242,13 +278,53 @@ export default function ProductsPage() {
                   </tr>
                 ) : filteredProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-20 text-[var(--text-muted)]">
+                    <td colSpan={7} className="text-center py-20 text-[var(--text-muted)]">
                       Produk tidak ditemukan
                     </td>
                   </tr>
                 ) : (
-                  filteredProducts.map((product) => (
-                    <tr key={product.id}>
+                  filteredProducts.map((product, index) => (
+                    <tr 
+                      key={product.id}
+                      draggable={!search}
+                      onDragStart={(e) => {
+                        if (search) return;
+                        setDraggedIndex(index);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragOver={(e) => {
+                        if (search) return;
+                        e.preventDefault();
+                        setDragOverIndex(index);
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverIndex === index) setDragOverIndex(null);
+                      }}
+                      onDrop={(e) => {
+                        if (search) return;
+                        e.preventDefault();
+                        handleDrop(index);
+                      }}
+                      onDragEnd={() => {
+                        setDraggedIndex(null);
+                        setDragOverIndex(null);
+                      }}
+                      className={`transition-all duration-150 ${
+                        draggedIndex === index ? "opacity-30 bg-indigo-500/10" : ""
+                      } ${
+                        dragOverIndex === index ? "border-t-2 border-indigo-500 bg-indigo-500/10" : ""
+                      }`}
+                    >
+                      <td className="w-10 text-center">
+                        <div 
+                          className={`inline-flex items-center justify-center p-1.5 rounded-lg transition-colors ${
+                            search ? "opacity-30 cursor-not-allowed" : "cursor-grab active:cursor-grabbing hover:bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                          }`}
+                          title={search ? "Hapus pencarian untuk mengubah urutan" : "Tarik untuk mengubah urutan"}
+                        >
+                          <GripVertical size={18} />
+                        </div>
+                      </td>
                       <td>
                         <div className="flex items-center gap-3">
                           <div className="w-12 h-12 rounded-lg bg-[var(--bg-secondary)] overflow-hidden flex-shrink-0 border border-[var(--border-color)]">

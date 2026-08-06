@@ -60,6 +60,7 @@ model Transaction {
   source               String?               @default("lynkid") @db.VarChar(50)
   purchaseDate         DateTime?             @default(now()) @map("purchase_date") @db.Timestamptz(6)
   warrantyExpiredAt    DateTime?             @map("warranty_expired_at") @db.Timestamptz(6)
+  receiptNumber        String?               @map("receipt_number")
   createdAt            DateTime?             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime?             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   paymentData          Json?                 @map("payment_data")
@@ -324,6 +325,7 @@ model Product {
   messageTemplate String? @map("message_template") @db.Text
   isActive    Boolean  @default(true) @map("is_active")
   stockStatus String   @default("INTEGRATED") @map("stock_status") @db.VarChar(50)
+  sortOrder   Int      @default(0) @map("sort_order")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   stockAccounts StockAccount[]
