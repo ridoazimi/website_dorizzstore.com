@@ -27,6 +27,22 @@ export async function getProducts(activeOnly: boolean = false) {
     const products = await prisma.product.findMany({
       where: activeOnly ? { isActive: true } : {},
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+      include: {
+        _count: {
+          select: {
+            transactions: true,
+          },
+        },
+        stockAccounts: {
+          include: {
+            _count: {
+              select: {
+                transactions: true,
+              },
+            },
+          },
+        },
+      },
     });
 
 
@@ -51,10 +67,20 @@ export async function getProducts(activeOnly: boolean = false) {
         return acc + (slots > 0 ? slots : 0);
       }, 0);
 
+      // Count sold transactions from direct relation or via stock accounts
+      const directTransactionsCount = p._count?.transactions || 0;
+      const stockAccountsTransactionsCount = (p.stockAccounts || []).reduce(
+        (sum: number, sa: any) => sum + (sa._count?.transactions || 0),
+        0
+      );
+      const soldCount = directTransactionsCount || stockAccountsTransactionsCount;
+
       return {
         ...p,
         price: Number(p.price),
-        availableStock
+        discountPercentage: p.discountPercentage ?? 0,
+        availableStock,
+        soldCount,
       };
     });
     } catch (error) {
@@ -73,6 +99,8 @@ export async function createProduct(formData: FormData) {
     const description = formData.get("description") as string;
     const priceStr = formData.get("price") as string;
     const price = parseFloat(priceStr || "0");
+    const discountPercentageStr = formData.get("discountPercentage") as string;
+    const discountPercentage = parseInt(discountPercentageStr || "0", 10);
     const category = formData.get("category") as string;
     const maxSlotsStr = formData.get("maxSlots") as string;
     const maxSlots = parseInt(maxSlotsStr || "3");
@@ -106,6 +134,7 @@ export async function createProduct(formData: FormData) {
         slug,
         description,
         price,
+        discountPercentage: isNaN(discountPercentage) ? 0 : discountPercentage,
         category,
         maxSlots,
         duration,
@@ -136,6 +165,8 @@ export async function updateProduct(id: string, formData: FormData) {
     const description = formData.get("description") as string;
     const priceStr = formData.get("price") as string;
     const price = parseFloat(priceStr || "0");
+    const discountPercentageStr = formData.get("discountPercentage") as string;
+    const discountPercentage = parseInt(discountPercentageStr || "0", 10);
     const category = formData.get("category") as string;
     const maxSlotsStr = formData.get("maxSlots") as string;
     const maxSlots = parseInt(maxSlotsStr || "3");
@@ -164,6 +195,7 @@ export async function updateProduct(id: string, formData: FormData) {
         slug,
         description,
         price,
+        discountPercentage: isNaN(discountPercentage) ? 0 : discountPercentage,
         category,
         maxSlots,
         duration,

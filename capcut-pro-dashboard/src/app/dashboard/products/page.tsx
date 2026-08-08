@@ -32,16 +32,19 @@ interface Product {
   slug: string | null;
   description: string | null;
   price: any;
+  discountPercentage?: number | null;
   imageUrl: string | null;
   category: string | null;
   maxSlots: number | null;
   duration: number | null;
   availableStock?: number;
+  soldCount?: number;
   isActive: boolean;
   stockStatus: string;
   rules: string | null;
   messageTemplate: string | null;
   sortOrder?: number | null;
+  createdAt?: string | Date | null;
 }
 
 
@@ -64,6 +67,7 @@ export default function ProductsPage() {
     slug: "",
     description: "",
     price: "",
+    discountPercentage: "0",
     category: "",
     maxSlots: "3",
     duration: "30",
@@ -101,6 +105,9 @@ export default function ProductsPage() {
         slug: product.slug || "",
         description: product.description || "",
         price: product.price.toString(),
+        discountPercentage: product.discountPercentage !== undefined && product.discountPercentage !== null
+          ? String(product.discountPercentage)
+          : "0",
         category: product.category || "",
         maxSlots: (product.maxSlots || 3).toString(),
         duration: (product.duration || 30).toString(),
@@ -118,6 +125,7 @@ export default function ProductsPage() {
         slug: "",
         description: "",
         price: "",
+        discountPercentage: "0",
         category: "",
         maxSlots: "3",
         duration: "30",
@@ -134,6 +142,13 @@ export default function ProductsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const discountVal = Number(formData.discountPercentage);
+    if (isNaN(discountVal) || discountVal < 0 || discountVal > 100) {
+      alert("Diskon (%) harus berupa angka antara 0 dan 100.");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -142,6 +157,7 @@ export default function ProductsPage() {
       data.append("slug", formData.slug);
       data.append("description", formData.description);
       data.append("price", formData.price);
+      data.append("discountPercentage", formData.discountPercentage);
       data.append("category", formData.category);
       data.append("maxSlots", formData.maxSlots);
       data.append("duration", formData.duration);
@@ -462,6 +478,18 @@ export default function ProductsPage() {
                     placeholder="25000"
                     value={formData.price}
                     onChange={(e) => setFormData({...formData, price: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Diskon (%)</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    max="100"
+                    className="form-input" 
+                    placeholder="0"
+                    value={formData.discountPercentage}
+                    onChange={(e) => setFormData({...formData, discountPercentage: e.target.value})}
                   />
                 </div>
                 <div>

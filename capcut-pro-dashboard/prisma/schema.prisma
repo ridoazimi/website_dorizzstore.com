@@ -54,6 +54,7 @@ model Transaction {
   lynkIdRef            String?               @unique @map("lynk_id_ref") @db.VarChar(255)
   userId               String?               @map("user_id") @db.Uuid
   stockAccountId       String?               @map("stock_account_id") @db.Uuid
+  productId            String?               @map("product_id") @db.Uuid
   amount               Decimal               @default(0) @db.Decimal(12, 2)
   productName          String?               @map("product_name") @db.VarChar(255)
   status               String?               @default("success") @db.VarChar(50)
@@ -68,6 +69,7 @@ model Transaction {
   isManual             Boolean?              @default(false) @map("is_manual")
   voucherCode          String?               @map("voucher_code") @db.VarChar(50)
   stockAccount         StockAccount?         @relation(fields: [stockAccountId], references: [id], onUpdate: NoAction)
+  product              Product?              @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   user                 User?                 @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   warrantyClaims       WarrantyClaim[]
   affiliateCommissions AffiliateCommission[]
@@ -311,24 +313,26 @@ model AttendanceRecord {
 // ===== Marketplace =====
 
 model Product {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String   @db.VarChar(255)
-  slug        String?  @unique @db.VarChar(255)
-  description String?  @db.Text
-  price       Decimal  @default(0) @db.Decimal(12, 2)
-  imageUrl    String?  @map("image_url") @db.VarChar(500)
-  category    String?  @db.VarChar(100)
-  maxSlots    Int?     @default(3) @map("max_slots")
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String         @db.VarChar(255)
+  slug               String?        @unique @db.VarChar(255)
+  description        String?        @db.Text
+  price              Decimal        @default(0) @db.Decimal(12, 2)
+  discountPercentage Int?           @default(0) @map("discount_percentage")
+  imageUrl           String?        @map("image_url") @db.VarChar(500)
+  category           String?        @db.VarChar(100)
+  maxSlots           Int?           @default(3) @map("max_slots")
   // productType String?  @default("mobile") @map("product_type") @db.VarChar(50)
-  duration    Int?     @default(30)
-  rules       String?  @db.Text
-  messageTemplate String? @map("message_template") @db.Text
-  isActive    Boolean  @default(true) @map("is_active")
-  stockStatus String   @default("INTEGRATED") @map("stock_status") @db.VarChar(50)
-  sortOrder   Int      @default(0) @map("sort_order")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  stockAccounts StockAccount[]
+  duration           Int?           @default(30)
+  rules              String?        @db.Text
+  messageTemplate    String?        @map("message_template") @db.Text
+  isActive           Boolean        @default(true) @map("is_active")
+  stockStatus        String         @default("INTEGRATED") @map("stock_status") @db.VarChar(50)
+  sortOrder          Int            @default(0) @map("sort_order")
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  stockAccounts      StockAccount[]
+  transactions       Transaction[]
 
   @@map("products")
 }

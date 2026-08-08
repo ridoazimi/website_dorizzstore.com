@@ -108,6 +108,15 @@ export default async function MarketplacePage() {
                   const isPreOrder = product.stockStatus === "PREORDER";
                   const isOutOfStock = !isPreOrder && (product.availableStock || 0) === 0;
 
+                  const isNewProduct = product.createdAt
+                    ? (new Date().getTime() - new Date(product.createdAt).getTime()) <= 30 * 24 * 60 * 60 * 1000
+                    : false;
+                  const soldCount = product.soldCount ?? product._count?.transactions ?? 0;
+                  const hasDiscount = Boolean(product.discountPercentage && product.discountPercentage > 0);
+                  const discountedPrice = hasDiscount
+                    ? Number(product.price) * (1 - product.discountPercentage / 100)
+                    : Number(product.price);
+
                   return (
                     <Link
                       key={product.id}
@@ -116,6 +125,19 @@ export default async function MarketplacePage() {
                       className={`group bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden hover:shadow-md transition-all flex flex-col ${isOutOfStock ? 'opacity-75 cursor-default' : ''}`}
                     >
                       <div className="aspect-square relative w-full overflow-hidden bg-slate-100">
+                        {isNewProduct && (
+                          <div className="absolute top-0 left-0 z-10 w-36 h-36 overflow-hidden pointer-events-none">
+                            <div 
+                              className="absolute top-6 -left-12 w-48 py-1.5 text-center text-[10px] md:text-xs font-black text-white uppercase tracking-wider shadow-lg -rotate-45 whitespace-nowrap flex items-center justify-center"
+                              style={{
+                                background: "linear-gradient(135deg, rgb(28, 149, 209), rgb(81, 183, 229))"
+                              }}
+                            >
+                              NEW PRODUCT!
+                            </div>
+                          </div>
+                        )}
+
                         {product.imageUrl && (
                           <Image
                             src={product.imageUrl}
@@ -155,11 +177,28 @@ export default async function MarketplacePage() {
                         </h3>
                         <div className="mt-auto">
                           <p className={`text-[10px] font-bold mb-1 ${isOutOfStock ? 'text-red-400' : isPreOrder ? 'text-amber-500' : 'text-emerald-500'}`}>
+                            Terjual: {soldCount}
+                          </p>
+                          <p className={`text-[10px] font-bold mb-1 ${isOutOfStock ? 'text-red-400' : isPreOrder ? 'text-amber-500' : 'text-emerald-500'}`}>
                             {isOutOfStock ? '❌ Stok Habis' : isPreOrder ? '⚡ Pre-order: 1-24 Jam' : `Tersedia: ${product.availableStock} Slot`}
                           </p>
-                          <p className="text-sm md:text-lg font-black text-[var(--text-primary)]">
-                            {formatCurrency(Number(product.price))}
-                          </p>
+                          {hasDiscount ? (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-sm md:text-lg font-black text-[var(--text-primary)]">
+                                {formatCurrency(discountedPrice)}
+                              </span>
+                              <span className="text-xs md:text-sm line-through text-gray-400">
+                                {formatCurrency(Number(product.price))}
+                              </span>
+                              <span className="bg-red-100 text-red-500 text-[10px] md:text-xs font-bold rounded px-1">
+                                -{product.discountPercentage}%
+                              </span>
+                            </div>
+                          ) : (
+                            <p className="text-sm md:text-lg font-black text-[var(--text-primary)]">
+                              {formatCurrency(Number(product.price))}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </Link>
