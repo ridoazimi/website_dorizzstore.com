@@ -20,13 +20,14 @@ function isValidReorderItem(item: unknown): item is ReorderProductItem {
   );
 }
 
-export async function getProducts(activeOnly: boolean = false) {
+export async function getProducts(activeOnly: boolean = false, take?: number) {
   try {
     // Order by sortOrder ascending to respect admin panel drag-and-drop order
     // Filter to only show active products when activeOnly is true
     const products = await prisma.product.findMany({
       where: activeOnly ? { isActive: true } : {},
       orderBy: [{ sortOrder: "asc" }, { createdAt: "desc" }],
+      ...(take ? { take } : {}),
       include: {
         _count: {
           select: {

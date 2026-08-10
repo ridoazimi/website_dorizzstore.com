@@ -39,7 +39,7 @@ export const metadata: Metadata = {
 export const revalidate = 60; // Cache this page for 60 seconds
 
 export default async function MarketplacePage() {
-  const products = await getProducts(true);
+  const products = await getProducts(true, 4);
 
 
 
@@ -126,9 +126,9 @@ export default async function MarketplacePage() {
                     >
                       <div className="aspect-square relative w-full overflow-hidden bg-slate-100">
                         {isNewProduct && (
-                          <div className="absolute top-0 left-0 z-10 w-36 h-36 overflow-hidden pointer-events-none">
+                          <div className="absolute top-0 left-0 z-10 w-20 h-20 md:w-32 md:h-32 overflow-hidden pointer-events-none">
                             <div 
-                              className="absolute top-6 -left-12 w-48 py-1.5 text-center text-[10px] md:text-xs font-black text-white uppercase tracking-wider shadow-lg -rotate-45 whitespace-nowrap flex items-center justify-center"
+                              className="absolute top-3 -left-7 md:top-5 md:-left-10 w-28 md:w-44 py-0.5 md:py-1 text-center text-[7px] sm:text-[8px] md:text-[10px] font-black text-white uppercase tracking-wider shadow-md -rotate-45 whitespace-nowrap flex items-center justify-center"
                               style={{
                                 background: "linear-gradient(135deg, rgb(28, 149, 209), rgb(81, 183, 229))"
                               }}
