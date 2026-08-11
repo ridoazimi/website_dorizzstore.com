@@ -65,12 +65,12 @@ export default async function MarketplacePage() {
           <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.15),transparent_60%)] opacity-50 [data-theme=light]:hidden" />
           <div className="relative z-10 max-w-7xl mx-auto px-6 pt-20 pb-2 text-center flex flex-col items-center">
             {/* Logo in Center */}
-            <div className="relative w-16 h-16 lg:w-24 lg:h-24 mb-6 rounded-xl overflow-hidden shadow-lg bg-white backdrop-blur-md border border-[var(--border-color)] flex items-center justify-center p-2">
+            <div className="relative w-16 h-16 lg:w-24 lg:h-24 mb-6 rounded-xl overflow-hidden shadow-lg">
               <Image
                 src="/images/logo.png"
                 alt="Dorizz Store Logo"
                 fill
-                className="object-contain p-2 drop-shadow-md"
+                className="object-cover drop-shadow-md"
               />
             </div>
             {/* Handle / Tagline */}
