@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   ClipboardList, Clock, CheckCircle2, Circle, Plus, Trash2, Pencil,
   Save, X, Loader2, Users, Calendar, ChevronRight,
-  CalendarClock, Check, AlertCircle, Shield, RefreshCw,
+  CalendarClock, Check, AlertCircle, Shield, RefreshCw, Search,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -18,6 +18,9 @@ interface AttendanceRecord { id: string; adminId: string; date: string; checkInA
 
 const todayWIB = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
 const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }) : "-";
+const fmtDate = (date: string | null) => date
+  ? new Date(`${date}T00:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
+  : "-";
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AbsensiPage() {
@@ -32,6 +35,8 @@ export default function AbsensiPage() {
   const [schedules, setSchedules] = useState<Record<string, Schedule>>({});
   const [loading, setLoading] = useState(true);
   const [rekapDate, setRekapDate] = useState(todayWIB());
+  const [taskQuery, setTaskQuery] = useState("");
+  const [taskFilter, setTaskFilter] = useState<"all" | "daily" | "once" | "unassigned">("all");
 
   // ── Task form ──
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -199,6 +204,19 @@ export default function AbsensiPage() {
     setMyAssignments(prev => prev.map(a => a.id === assignment.id ? { ...a, status: newStatus, completedAt: newStatus === "done" ? new Date().toISOString() : null } : a));
   }
 
+  const normalizedTaskQuery = taskQuery.trim().toLowerCase();
+  const filteredTasks = tasks.filter(task => {
+    const matchesQuery = !normalizedTaskQuery
+      || task.title.toLowerCase().includes(normalizedTaskQuery)
+      || (task.description || "").toLowerCase().includes(normalizedTaskQuery);
+    const matchesFilter = taskFilter === "all"
+      || (taskFilter === "unassigned" ? (task.assignments?.length || 0) === 0 : task.recurrenceType === taskFilter);
+    return matchesQuery && matchesFilter;
+  });
+  const activeTaskCount = tasks.filter(task => task.isActive).length;
+  const assignedTaskCount = tasks.filter(task => (task.assignments?.length || 0) > 0).length;
+  const checkedInCount = attendanceRecords.filter(record => Boolean(record.checkInAt)).length;
+
   // ─── UI ───────────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -214,46 +232,120 @@ export default function AbsensiPage() {
   return (
     <div className="flex flex-col min-h-screen">
       <Topbar title="Absensi & Tugas" />
-      <div className="flex-1 p-4 md:p-6 space-y-5 max-w-6xl mx-auto w-full">
+      <div className="flex-1 p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto w-full">
 
         {/* ─── DEVELOPER VIEW ────────────────────────────────────────────────── */}
         {isDeveloper ? (
           <>
+            {/* Page summary */}
+            <section className="relative overflow-hidden rounded-[28px] border border-cyan-400/20 bg-gradient-to-br from-slate-950 via-slate-900 to-cyan-950 p-5 md:p-7 text-white shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
+              <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-cyan-400/15 blur-3xl" />
+              <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-cyan-100">
+                    <CalendarClock size={14} /> Pusat kerja tim
+                  </div>
+                  <h2 className="text-2xl font-black tracking-tight md:text-3xl">Kelola kehadiran dan pekerjaan tim</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
+                    Pantau tugas, jadwal shift, dan rekap absensi dalam satu tempat yang lebih mudah dibaca.
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                  {[
+                    { label: "Tugas aktif", value: activeTaskCount, icon: <ClipboardList size={16} /> },
+                    { label: "Sudah dibagi", value: assignedTaskCount, icon: <Users size={16} /> },
+                    { label: "Hadir", value: checkedInCount, icon: <CheckCircle2 size={16} /> },
+                  ].map(item => (
+                    <div key={item.label} className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.08] px-3 py-3 backdrop-blur-sm sm:min-w-[112px]">
+                      <div className="mb-2 text-cyan-300">{item.icon}</div>
+                      <p className="text-xl font-black">{item.value}</p>
+                      <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
             {/* Tab bar */}
-            <div className="flex gap-2 flex-wrap">
-              {(["tugas", "jadwal", "rekap"] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold transition-all capitalize"
-                  style={{
-                    background: activeTab === tab ? "var(--gradient-primary)" : "var(--bg-card)",
-                    color: activeTab === tab ? "var(--text-primary)" : "var(--text-muted)",
-                    border: activeTab === tab ? "none" : "1px solid var(--border-color)",
-                  }}
-                >
-                  {tab === "tugas" ? "📋 Tugas (RKHI)" : tab === "jadwal" ? "🕐 Jadwal Shift" : "📊 Rekap Absensi"}
-                </button>
-              ))}
-              <button onClick={loadData} className="btn-icon ml-auto" title="Refresh"><RefreshCw size={15} /></button>
+            <div className="glass-card flex flex-col gap-2 rounded-2xl p-2 sm:flex-row sm:items-center">
+              <div className="grid flex-1 grid-cols-3 gap-1">
+                {(["tugas", "jadwal", "rekap"] as const).map(tab => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold transition-all sm:text-sm"
+                    style={{
+                      background: activeTab === tab ? "var(--gradient-primary)" : "transparent",
+                      color: activeTab === tab ? "#ffffff" : "var(--text-muted)",
+                      boxShadow: activeTab === tab ? "0 10px 28px rgba(6,182,212,0.18)" : "none",
+                    }}
+                  >
+                    {tab === "tugas" ? <ClipboardList size={17} /> : tab === "jadwal" ? <Clock size={17} /> : <Calendar size={17} />}
+                    <span>{tab === "tugas" ? "Tugas" : tab === "jadwal" ? "Jadwal Shift" : "Rekap"}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={loadData}
+                className="flex min-h-11 items-center justify-center gap-2 rounded-xl border px-4 text-xs font-bold transition-all hover:-translate-y-0.5"
+                style={{ borderColor: "var(--border-color)", color: "var(--text-secondary)", background: "var(--bg-secondary)" }}
+                title="Muat ulang data"
+              >
+                <RefreshCw size={15} /> <span className="sm:hidden lg:inline">Muat ulang</span>
+              </button>
             </div>
 
             {/* ── TAB: TUGAS ── */}
             {activeTab === "tugas" && (
               <div className="space-y-4">
-                {/* Header + Add button */}
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-[var(--text-muted)]">{tasks.length} tugas terdaftar</p>
-                  <button onClick={() => { setEditingTask(null); setTaskTitle(""); setTaskDesc(""); setTaskRecurrence("daily"); setTaskPeriodStart(""); setTaskPeriodEnd(""); setShowTaskForm(true); }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white transition-all"
-                    style={{ background: "var(--gradient-primary)" }}>
-                    <Plus size={14} /> Buat Tugas
-                  </button>
+                {/* Task toolbar */}
+                <div className="glass-card rounded-2xl p-4 md:p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <p className="text-base font-black text-[var(--text-primary)]">Daftar tugas tim</p>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        Menampilkan {filteredTasks.length} dari {tasks.length} tugas
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setEditingTask(null); setTaskTitle(""); setTaskDesc(""); setTaskRecurrence("daily"); setTaskPeriodStart(""); setTaskPeriodEnd(""); setShowTaskForm(true); }}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold text-white shadow-lg transition-all hover:-translate-y-0.5"
+                      style={{ background: "var(--gradient-primary)" }}
+                    >
+                      <Plus size={17} /> Buat Tugas
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_200px]">
+                    <label className="relative block">
+                      <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <input
+                        value={taskQuery}
+                        onChange={event => setTaskQuery(event.target.value)}
+                        className="form-input min-h-11 w-full pl-10 text-sm"
+                        placeholder="Cari judul atau deskripsi tugas..."
+                        aria-label="Cari tugas"
+                      />
+                    </label>
+                    <select
+                      value={taskFilter}
+                      onChange={event => setTaskFilter(event.target.value as typeof taskFilter)}
+                      className="form-input min-h-11 w-full text-sm font-semibold"
+                      aria-label="Filter tugas"
+                    >
+                      <option value="all">Semua tugas</option>
+                      <option value="daily">Tugas harian</option>
+                      <option value="once">Tugas sekali</option>
+                      <option value="unassigned">Belum ditugaskan</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Task form */}
                 {showTaskForm && (
-                  <div className="glass-card p-4 space-y-3">
+                  <div className="glass-card space-y-4 rounded-2xl border p-4 md:p-5" style={{ borderColor: "var(--border-color)" }}>
                     <p className="text-sm font-semibold text-[var(--text-primary)]">{editingTask ? "Edit Tugas" : "Buat Tugas Baru"}</p>
                     <input className="form-input w-full text-sm" placeholder="Judul tugas..." value={taskTitle} onChange={e => setTaskTitle(e.target.value)} />
                     <textarea className="form-input w-full text-sm resize-none" rows={2} placeholder="Deskripsi (opsional)..." value={taskDesc} onChange={e => setTaskDesc(e.target.value)} />
@@ -297,48 +389,63 @@ export default function AbsensiPage() {
 
                 {/* Task list */}
                 {tasks.length === 0 && !showTaskForm && (
-                  <div className="glass-card p-10 text-center">
-                    <ClipboardList size={40} className="mx-auto mb-3 opacity-20" />
-                    <p className="text-sm text-[var(--text-muted)]">Belum ada tugas. Buat tugas pertama!</p>
+                  <div className="glass-card rounded-2xl p-12 text-center">
+                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-400">
+                      <ClipboardList size={26} />
+                    </div>
+                    <p className="font-bold text-[var(--text-primary)]">Belum ada tugas</p>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">Buat tugas pertama untuk mulai mengatur pekerjaan tim.</p>
                   </div>
                 )}
-                <div className="space-y-2">
-                  {tasks.map(task => (
-                    <div key={task.id} className="glass-card p-4">
+                {tasks.length > 0 && filteredTasks.length === 0 && (
+                  <div className="glass-card rounded-2xl p-10 text-center">
+                    <Search size={28} className="mx-auto mb-3 text-[var(--text-muted)]" />
+                    <p className="font-bold text-[var(--text-primary)]">Tugas tidak ditemukan</p>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">Coba kata kunci atau filter yang berbeda.</p>
+                  </div>
+                )}
+                <div className="grid gap-3">
+                  {filteredTasks.map(task => (
+                    <div key={task.id} className="glass-card rounded-2xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-lg md:p-5" style={{ borderColor: "var(--border-color)" }}>
                       <div className="flex items-start gap-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className={`text-sm font-semibold ${task.isActive ? "text-[var(--text-primary)]" : "text-[var(--text-muted)] line-through"}`}>{task.title}</p>
                             <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
                               style={{ background: task.recurrenceType === "daily" ? "rgba(99,102,241,0.15)" : "rgba(245,158,11,0.15)", color: task.recurrenceType === "daily" ? "#818cf8" : "#f59e0b" }}>
-                              {task.recurrenceType === "daily" ? "🔄 Harian" : `📅 ${task.scheduledDate}`}
+                              {task.recurrenceType === "daily" ? "Berulang harian" : fmtDate(task.scheduledDate)}
                             </span>
                             {task.periodStart && task.periodEnd && (
                               <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
                                 style={{ background: "rgba(14,165,233,0.12)", color: "#38bdf8", border: "1px solid rgba(14,165,233,0.2)" }}>
-                                ⏱ {task.periodStart} — {task.periodEnd}
+                                {fmtDate(task.periodStart)} — {fmtDate(task.periodEnd)}
                               </span>
                             )}
                             {!task.isActive && <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 font-semibold">Nonaktif</span>}
                           </div>
                           {task.description && <p className="text-xs text-[var(--text-muted)] mt-0.5">{task.description}</p>}
                           {/* Assigned admins */}
-                          {(task.assignments?.length || 0) > 0 && (
-                            <div className="flex gap-1 mt-1.5 flex-wrap">
+                          {(task.assignments?.length || 0) > 0 ? (
+                            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                              <span className="mr-1 text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)]">Ditugaskan:</span>
                               {(task.assignments || []).slice(0, 4).map(a => (
                                 <span key={a.adminId} className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }}>
                                   {a.admin.name}
                                 </span>
                               ))}
-                              {(task.assignments?.length || 0) > 4 && <span className="text-[10px] text-[var(--text-muted)]">+{(task.assignments?.length || 0) - 4}</span>}
+                              {(task.assignments?.length || 0) > 4 && <span className="text-[10px] text-[var(--text-muted)]">+{(task.assignments?.length || 0) - 4} lainnya</span>}
+                            </div>
+                          ) : (
+                            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold text-amber-500">
+                              <AlertCircle size={12} /> Belum ditugaskan
                             </div>
                           )}
                         </div>
                         {/* Actions */}
-                        <div className="flex gap-1 flex-shrink-0">
-                          <button onClick={() => openAssign(task)} className="btn-icon" title="Assign ke admin" style={{ color: "#22c55e" }}><Users size={14} /></button>
-                          <button onClick={() => openEditTask(task)} className="btn-icon" title="Edit"><Pencil size={14} /></button>
-                          <button onClick={() => deleteTask(task.id)} className="btn-icon hover:text-rose-400" title="Hapus"><Trash2 size={14} /></button>
+                        <div className="flex flex-shrink-0 gap-1.5">
+                          <button type="button" onClick={() => openAssign(task)} className="btn-icon h-10 w-10 rounded-xl" aria-label="Atur penanggung jawab" title="Atur penanggung jawab" style={{ color: "#22c55e" }}><Users size={16} /></button>
+                          <button type="button" onClick={() => openEditTask(task)} className="btn-icon h-10 w-10 rounded-xl" aria-label="Edit tugas" title="Edit tugas"><Pencil size={16} /></button>
+                          <button type="button" onClick={() => deleteTask(task.id)} className="btn-icon h-10 w-10 rounded-xl hover:text-rose-400" aria-label="Hapus tugas" title="Hapus tugas"><Trash2 size={16} /></button>
                         </div>
                       </div>
 
@@ -374,7 +481,17 @@ export default function AbsensiPage() {
             {/* ── TAB: JADWAL ── */}
             {activeTab === "jadwal" && (
               <div className="space-y-3">
-                <p className="text-sm text-[var(--text-muted)]">Atur jadwal shift check-in/check-out per admin. Webhook otomatis terkirim saat jam tiba (via n8n cron).</p>
+                <div className="glass-card rounded-2xl p-4 md:p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
+                      <Clock size={19} />
+                    </div>
+                    <div>
+                      <p className="font-black text-[var(--text-primary)]">Jadwal shift tim</p>
+                      <p className="mt-1 text-sm leading-relaxed text-[var(--text-muted)]">Atur jam check-in dan check-out setiap anggota. Notifikasi webhook akan mengikuti jadwal aktif.</p>
+                    </div>
+                  </div>
+                </div>
                 {adminUsers.length === 0 && (
                   <div className="glass-card p-10 text-center">
                     <Users size={36} className="mx-auto mb-3 opacity-20" />
@@ -449,14 +566,24 @@ export default function AbsensiPage() {
             {activeTab === "rekap" && (
               <div className="space-y-4">
                 {/* Date picker */}
-                <div className="flex items-center gap-3 flex-wrap">
-                  <input type="date" className="form-input text-sm" value={rekapDate} onChange={e => setRekapDate(e.target.value)} />
-                  <button onClick={() => { setExpandedAdminId(null); setAdminDetailMap({}); loadData(); }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white"
-                    style={{ background: "var(--gradient-primary)" }}>
-                    <RefreshCw size={13} /> Tampilkan
-                  </button>
-                  <p className="text-xs text-[var(--text-muted)] ml-auto">{adminUsers.length} admin aktif</p>
+                <div className="glass-card flex flex-col gap-4 rounded-2xl p-4 md:flex-row md:items-center md:p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
+                      <Calendar size={19} />
+                    </div>
+                    <div>
+                      <p className="font-black text-[var(--text-primary)]">Rekap harian</p>
+                      <p className="text-xs text-[var(--text-muted)]">{adminUsers.length} anggota aktif</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row md:ml-auto">
+                    <input type="date" className="form-input min-h-11 text-sm" value={rekapDate} onChange={e => setRekapDate(e.target.value)} />
+                    <button onClick={() => { setExpandedAdminId(null); setAdminDetailMap({}); loadData(); }}
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold text-white"
+                      style={{ background: "var(--gradient-primary)" }}>
+                      <RefreshCw size={15} /> Tampilkan
+                    </button>
+                  </div>
                 </div>
 
                 {adminUsers.length === 0 && (
@@ -594,13 +721,13 @@ export default function AbsensiPage() {
           </>
         ) : (
           /* ─── ADMIN VIEW ─────────────────────────────────────────────────── */
-          <div className="space-y-5 max-w-lg mx-auto">
+          <div className="mx-auto max-w-4xl space-y-5">
             {/* Today's status */}
             {(() => {
               const myAtt = attendanceRecords.find(r => r.adminId === user?.id);
               const now = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
               return (
-                <div className="glass-card p-5">
+                <div className="glass-card rounded-2xl border p-5 md:p-6" style={{ borderColor: "var(--border-color)" }}>
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(99,102,241,0.15)" }}>
                       <CalendarClock size={20} style={{ color: "var(--accent-primary)" }} />
@@ -635,7 +762,7 @@ export default function AbsensiPage() {
             })()}
 
             {/* Task list */}
-            <div className="glass-card p-5 space-y-3">
+            <div className="glass-card space-y-4 rounded-2xl border p-5 md:p-6" style={{ borderColor: "var(--border-color)" }}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <ClipboardList size={16} style={{ color: "var(--accent-primary)" }} />
