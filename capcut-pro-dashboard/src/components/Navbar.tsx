@@ -52,12 +52,12 @@ export default function Navbar({ variant = "default" }: NavbarProps) {
     <nav className={navClasses}>
       <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-3 group">
-          <div className={`relative w-9 h-9 rounded-xl overflow-hidden shadow-sm group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 bg-white p-1.5 border ${isDark ? "border-gray-800/60" : "border-[var(--border-color)]"}`}>
+          <div className="relative w-9 h-9 rounded-xl overflow-hidden shadow-sm group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
             <Image
               src="/images/logo.png"
               alt="Logo"
               fill
-              className="object-contain"
+              className="object-cover"
             />
           </div>
           <span className={logoTextClasses}>
