@@ -8,8 +8,8 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-6">
         <div className="flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="flex items-center gap-3">
-            <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-white/10 p-1 border border-[var(--border-color)]">
-              <Image src="/images/logo.png" alt="Logo" fill className="object-contain p-1" />
+            <div className="relative w-8 h-8 rounded-lg overflow-hidden">
+              <Image src="/images/logo.png" alt="Logo" fill className="object-cover" />
             </div>
             <span className="font-bold text-lg">
               Dorizz<span className="text-[var(--accent-primary)]">Store</span>
