@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
+import { notifyRestockIfNeeded } from "@/lib/restock-alert";
 
 // POST /api/stock/[id]/use - Alokasikan akun stok ke transaksi
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -42,6 +43,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           },
         });
       }
+    });
+
+    await notifyRestockIfNeeded(stockAccount.productType).catch((error) => {
+      console.error("[stock/use] restock alert error:", error);
     });
 
     return NextResponse.json({ success: true, message: "Akun stok berhasil dialokasikan" });
