@@ -2,6 +2,7 @@
 // JANGAN import server-only modules di sini (bcrypt, jose, cookies, NextResponse)
 
 export const ALL_PERMISSIONS = {
+  page_ai: "AI Business Copilot",
   page_transactions: "Halaman Transaksi",
   page_customers: "Halaman Pelanggan",
   page_stock: "Halaman Stok Akun",
@@ -25,6 +26,7 @@ export const ALL_PERMISSIONS = {
 export type PermissionKey = keyof typeof ALL_PERMISSIONS;
 
 export const DEFAULT_ADMIN_PERMISSIONS: Record<PermissionKey, boolean> = {
+  page_ai: false,
   page_transactions: true,
   page_customers: true,
   page_stock: false,
