@@ -127,8 +127,32 @@ export async function POST(req: NextRequest) {
     const yesterdayStart = new Date(start.getTime() - DAY_MS);
     const start7d = new Date(start.getTime() - 6 * DAY_MS);
     const start30d = new Date(start.getTime() - 29 * DAY_MS);
+    const next7d = new Date(end.getTime() + 6 * DAY_MS);
 
-    const [today, yesterday, week, month, leadsToday, leads30d, totalUsers, activeUsers, pending, warranty, stock, sources, products] = await Promise.all([
+    const [
+      today,
+      yesterday,
+      week,
+      month,
+      leadsToday,
+      leads30d,
+      totalUsers,
+      activeUsers,
+      pending,
+      warranty,
+      warranty30d,
+      expiring7d,
+      expired30d,
+      stock,
+      sources,
+      products,
+      activeSales,
+      salesPerformance30d,
+      activeAffiliates,
+      affiliatePerformance30d,
+      referredLeads30d,
+      messagesSent30d,
+    ] = await Promise.all([
       prisma.transaction.aggregate({ where: { status: "success", purchaseDate: { gte: start, lt: end } }, _count: { _all: true }, _sum: { amount: true } }),
       prisma.transaction.aggregate({ where: { status: "success", purchaseDate: { gte: yesterdayStart, lt: start } }, _count: { _all: true }, _sum: { amount: true } }),
       prisma.transaction.aggregate({ where: { status: "success", purchaseDate: { gte: start7d, lt: end } }, _count: { _all: true }, _sum: { amount: true } }),
@@ -139,9 +163,18 @@ export async function POST(req: NextRequest) {
       prisma.user.count({ where: { subscriptionStatus: "active" } }),
       prisma.transaction.count({ where: { status: "pending" } }),
       prisma.warrantyClaim.count({ where: { status: "pending" } }),
+      prisma.warrantyClaim.count({ where: { createdAt: { gte: start30d, lt: end } } }),
+      prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: start, lt: next7d } } }),
+      prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: start30d, lt: start } } }),
       prisma.stockAccount.findMany({ where: { usageType: "sale" }, select: { productType: true, usedSlots: true, maxSlots: true } }),
       prisma.transaction.groupBy({ by: ["source"], where: { status: "success", purchaseDate: { gte: start30d, lt: end } }, _count: { _all: true }, _sum: { amount: true } }),
       prisma.transaction.groupBy({ by: ["productName"], where: { status: "success", purchaseDate: { gte: start30d, lt: end } }, _count: { _all: true }, _sum: { amount: true }, orderBy: { _count: { productName: "desc" } }, take: 8 }),
+      prisma.salesTeam.count({ where: { status: "active" } }),
+      prisma.transaction.aggregate({ where: { status: "success", salesId: { not: null }, purchaseDate: { gte: start30d, lt: end } }, _count: { _all: true }, _sum: { amount: true } }),
+      prisma.affiliate.count({ where: { status: "active" } }),
+      prisma.affiliateCommission.aggregate({ where: { createdAt: { gte: start30d, lt: end } }, _count: { _all: true }, _sum: { amount: true, transactionAmount: true } }),
+      prisma.user.count({ where: { referredBy: { not: null }, createdAt: { gte: start30d, lt: end } } }),
+      prisma.messageLog.count({ where: { status: "sent", sentAt: { gte: start30d, lt: end } } }),
     ]);
 
     const stockSummary: Record<string, { accounts: number; remainingSlots: number; totalSlots: number }> = {};
@@ -161,14 +194,37 @@ export async function POST(req: NextRequest) {
       definitions: {
         newLead: "Lead baru dihitung dari pelanggan/user yang baru dibuat.",
         revenue: "Omzet dihitung dari transaksi berstatus success.",
+        retention: "Data expiry menunjukkan jumlah transaksi berlangganan yang masa aktifnya berakhir pada periode tersebut; ini bukan otomatis churn unik per pelanggan.",
       },
       today: { transactions: today._count._all, revenue: numeric(today._sum.amount), newLeads: leadsToday },
       yesterday: { transactions: yesterday._count._all, revenue: numeric(yesterday._sum.amount) },
       last7Days: { transactions: week._count._all, revenue: numeric(week._sum.amount) },
       last30Days: { transactions: month._count._all, revenue: numeric(month._sum.amount), newLeads: leads30d },
-      customers: { total: totalUsers, active: activeUsers },
-      operations: { pendingTransactions: pending, pendingWarrantyClaims: warranty },
+      customers: {
+        total: totalUsers,
+        active: activeUsers,
+        subscriptionsExpiringNext7Days: expiring7d,
+        subscriptionsExpiredLast30Days: expired30d,
+      },
+      operations: {
+        pendingTransactions: pending,
+        pendingWarrantyClaims: warranty,
+        warrantyClaimsLast30Days: warranty30d,
+        messagesSentLast30Days: messagesSent30d,
+      },
       stock: stockSummary,
+      sales: {
+        activeMembers: activeSales,
+        assistedTransactionsLast30Days: salesPerformance30d._count._all,
+        assistedRevenueLast30Days: numeric(salesPerformance30d._sum.amount),
+      },
+      affiliates: {
+        activeAffiliates,
+        referredLeadsLast30Days: referredLeads30d,
+        commissionEventsLast30Days: affiliatePerformance30d._count._all,
+        commissionsLast30Days: numeric(affiliatePerformance30d._sum.amount),
+        attributedRevenueLast30Days: numeric(affiliatePerformance30d._sum.transactionAmount),
+      },
       sourceBreakdown30d: sources.map((item) => ({ source: item.source || "unknown", transactions: item._count._all, revenue: numeric(item._sum.amount) })),
       topProducts30d: products.map((item) => ({ product: item.productName || "unknown", transactions: item._count._all, revenue: numeric(item._sum.amount) })),
     };
@@ -178,7 +234,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "AI Gateway OIDC belum tersedia pada deployment ini" }, { status: 503 });
     }
 
-    const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Jawab dalam Bahasa Indonesia yang ringkas dan berguna untuk keputusan. Gunakan hanya BUSINESS_CONTEXT untuk angka internal. Jangan mengarang angka. Semua waktu memakai WIB. Jika user menyebut lead baru, gunakan definisi newLead. Berikan rekomendasi berdasarkan data bila diminta. Sistem ini read-only dan tidak boleh mengklaim mengubah data.\n\nBUSINESS_CONTEXT:\n${JSON.stringify(context)}`;
+    const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Jawab dalam Bahasa Indonesia yang ringkas, tajam, dan berguna untuk keputusan. Gunakan hanya BUSINESS_CONTEXT untuk angka internal. Jangan mengarang angka. Semua waktu memakai WIB. Jika user menyebut lead baru, gunakan definisi newLead. Untuk rekomendasi, hubungkan transaksi, omzet, lead, stok, retention, sales, affiliate, warranty, dan channel bila relevan. Sistem ini read-only dan tidak boleh mengklaim mengubah data.\n\nBUSINESS_CONTEXT:\n${JSON.stringify(context)}`;
 
     const aiResponse = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
