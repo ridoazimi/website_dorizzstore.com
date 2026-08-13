@@ -229,9 +229,11 @@ export async function POST(req: NextRequest) {
       topProducts30d: products.map((item) => ({ product: item.productName || "unknown", transactions: item._count._all, revenue: numeric(item._sum.amount) })),
     };
 
-    const oidcToken = req.headers.get("x-vercel-oidc-token");
-    if (!oidcToken) {
-      return NextResponse.json({ error: "AI Gateway OIDC belum tersedia pada deployment ini" }, { status: 503 });
+    // Vercel exposes OIDC as VERCEL_OIDC_TOKEN for Functions. AI_GATEWAY_API_KEY
+    // remains a supported explicit fallback for local/non-OIDC environments.
+    const gatewayToken = (process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || "").trim();
+    if (!gatewayToken) {
+      return NextResponse.json({ error: "Autentikasi AI Gateway belum tersedia di deployment ini" }, { status: 503 });
     }
 
     const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Jawab dalam Bahasa Indonesia yang ringkas, tajam, dan berguna untuk keputusan. Gunakan hanya BUSINESS_CONTEXT untuk angka internal. Jangan mengarang angka. Semua waktu memakai WIB. Jika user menyebut lead baru, gunakan definisi newLead. Untuk rekomendasi, hubungkan transaksi, omzet, lead, stok, retention, sales, affiliate, warranty, dan channel bila relevan. Sistem ini read-only dan tidak boleh mengklaim mengubah data.\n\nBUSINESS_CONTEXT:\n${JSON.stringify(context)}`;
@@ -239,7 +241,7 @@ export async function POST(req: NextRequest) {
     const aiResponse = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${oidcToken}`,
+        Authorization: `Bearer ${gatewayToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
