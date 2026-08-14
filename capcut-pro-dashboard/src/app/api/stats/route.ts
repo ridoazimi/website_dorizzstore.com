@@ -26,17 +26,23 @@ type Intent =
   | "strategy"
   | "overview";
 
-function wibRange() {
+// IMPORTANT: halaman /transactions memfilter tanggal dengan
+// `${YYYY-MM-DD}T00:00:00.000Z` s/d `${YYYY-MM-DD}T23:59:59.999Z`.
+// Dorizz AI harus memakai definisi hari yang PERSIS sama agar angka selalu cocok.
+function adminTransactionDayRange() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(new Date());
-  const read = (type: string) => Number(parts.find((part) => part.type === type)?.value || 0);
-  const start = new Date(Date.UTC(read("year"), read("month") - 1, read("day"), -7));
+
+  const read = (type: string) => parts.find((part) => part.type === type)?.value || "";
+  const dateKey = `${read("year")}-${read("month")}-${read("day")}`;
+  const start = new Date(`${dateKey}T00:00:00.000Z`);
   const end = new Date(start.getTime() + DAY_MS);
-  return { start, end };
+
+  return { start, end, dateKey };
 }
 
 function numeric(value: unknown) {
@@ -90,9 +96,7 @@ function detectIntent(messages: ChatMessage[]): Intent {
     return "casual";
   }
 
-  if (includesAny(latest, ["expired", "expire", "berakhir", "renewal", "perpanjang", "retensi", "retention", "churn"])) {
-    return "retention";
-  }
+  if (includesAny(latest, ["expired", "expire", "berakhir", "renewal", "perpanjang", "retensi", "retention", "churn"])) return "retention";
   if (includesAny(latest, ["stok", "stock", "restok", "slot"])) return "stock";
   if (includesAny(latest, ["lead", "pelanggan baru", "customer baru", "user baru"])) return "leads";
   if (includesAny(latest, ["warranty", "garansi", "klaim"])) return "warranty";
@@ -100,6 +104,7 @@ function detectIntent(messages: ChatMessage[]): Intent {
   if (includesAny(latest, ["sales", "closer", "closing", "tim jual"])) return "sales";
   if (includesAny(latest, ["channel", "kanal", "sumber", "source"])) return "channels";
   if (includesAny(latest, ["produk", "terlaris", "best seller", "bestseller"])) return "products";
+
   if (
     includesAny(latest, [
       "transaksi",
@@ -111,17 +116,18 @@ function detectIntent(messages: ChatMessage[]): Intent {
       "sukses",
       "success",
       "pending",
+      "gagal",
+      "failed",
       "berhasil",
     ])
   ) {
     return "transactions";
   }
-  if (includesAny(latest, ["analisis", "keputusan", "saran", "rekomendasi", "prioritas", "strategi", "kenapa", "mengapa" ])) {
-    return "strategy";
-  }
 
-  // Follow-up pendek seperti "yang sukses berapa" / "kalau hari ini?"
-  if (includesAny(recentUsers, ["transaksi", "order", "omzet", "sukses", "success"])) return "transactions";
+  if (includesAny(latest, ["analisis", "keputusan", "saran", "rekomendasi", "prioritas", "strategi", "kenapa", "mengapa"])) return "strategy";
+
+  // Follow-up pendek seperti "yang sukses berapa" / "kalau pending?"
+  if (includesAny(recentUsers, ["transaksi", "order", "omzet", "sukses", "success", "pending", "gagal", "failed"])) return "transactions";
   if (includesAny(recentUsers, ["expired", "berakhir", "retensi", "renewal"])) return "retention";
   if (includesAny(recentUsers, ["stok", "restok"])) return "stock";
   if (includesAny(recentUsers, ["lead", "pelanggan baru"])) return "leads";
@@ -139,6 +145,23 @@ function casualAnswer(question: string) {
   }
   if (includesAny(q, ["makasih", "terima kasih"])) return "Siap. Kalau ada angka atau keputusan bisnis yang mau dicek, langsung tanya saja.";
   return "Halo. Saya siap bantu cek data dan keputusan bisnis Dorizz Store.";
+}
+
+function needsOpenAI(question: string, intent: Intent) {
+  if (intent === "strategy") return true;
+  const q = question.toLowerCase();
+  return includesAny(q, [
+    "analisis",
+    "analisa",
+    "kenapa",
+    "mengapa",
+    "saran",
+    "rekomendasi",
+    "strategi",
+    "keputusan",
+    "apa yang harus",
+    "menurut kamu",
+  ]);
 }
 
 // GET /api/stats - Statistik untuk halaman Dashboard Overview
@@ -235,7 +258,6 @@ export async function POST(req: NextRequest) {
     const lastQuestion = messages[messages.length - 1].content;
     const intent = detectIntent(messages);
 
-    // Pertanyaan conversational tidak perlu DB dan tidak memakai token OpenAI.
     if (intent === "casual") {
       return NextResponse.json({
         answer: casualAnswer(lastQuestion),
@@ -246,23 +268,22 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { start, end } = wibRange();
+    const { start, end, dateKey } = adminTransactionDayRange();
     const yesterdayStart = new Date(start.getTime() - DAY_MS);
     const start7d = new Date(start.getTime() - 6 * DAY_MS);
     const start30d = new Date(start.getTime() - 29 * DAY_MS);
-    const next7d = new Date(end.getTime() + 6 * DAY_MS);
+    const next7dEnd = new Date(end.getTime() + 7 * DAY_MS);
 
     const [
-      today,
-      yesterday,
-      week,
-      month,
+      todaySuccess,
+      yesterdaySuccess,
+      weekSuccess,
+      monthSuccess,
       todayStatuses,
       leadsToday,
       leads30d,
       totalUsers,
       activeUsers,
-      pending,
       warranty,
       warranty30d,
       expiredToday,
@@ -287,11 +308,10 @@ export async function POST(req: NextRequest) {
       prisma.user.count({ where: { createdAt: { gte: start30d, lt: end } } }),
       prisma.user.count(),
       prisma.user.count({ where: { subscriptionStatus: "active" } }),
-      prisma.transaction.count({ where: { status: "pending" } }),
       prisma.warrantyClaim.count({ where: { status: "pending" } }),
       prisma.warrantyClaim.count({ where: { createdAt: { gte: start30d, lt: end } } }),
       prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: start, lt: end } } }),
-      prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: end, lt: next7d } } }),
+      prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: end, lt: next7dEnd } } }),
       prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: start30d, lt: start } } }),
       prisma.stockAccount.findMany({ where: { usageType: "sale" }, select: { productType: true, usedSlots: true, maxSlots: true } }),
       prisma.transaction.groupBy({ by: ["source"], where: { status: "success", purchaseDate: { gte: start30d, lt: end } }, _count: { _all: true }, _sum: { amount: true } }),
@@ -307,6 +327,12 @@ export async function POST(req: NextRequest) {
     const statusToday: Record<string, number> = {};
     for (const item of todayStatuses) statusToday[item.status || "unknown"] = item._count._all;
 
+    const successToday = statusToday.success || 0;
+    const pendingToday = statusToday.pending || 0;
+    const failedToday = statusToday.failed || 0;
+    const totalToday = Object.values(statusToday).reduce((sum, value) => sum + value, 0);
+    const otherToday = Math.max(0, totalToday - successToday - pendingToday - failedToday);
+
     const stockSummary: Record<string, { accounts: number; remainingSlots: number; totalSlots: number }> = {};
     for (const item of stock) {
       const type = (item.productType || "unknown").toLowerCase();
@@ -320,18 +346,22 @@ export async function POST(req: NextRequest) {
 
     const context = {
       generatedAt: new Date().toISOString(),
-      timezone: "Asia/Jakarta",
+      dataDate: dateKey,
+      transactionDateDefinition: "Sama persis dengan filter tanggal halaman Transaksi admin: purchaseDate 00:00:00Z sampai sebelum 00:00:00Z hari berikutnya.",
       transactions: {
-        successToday: today._count._all,
-        revenueToday: numeric(today._sum.amount),
+        totalToday,
+        successToday,
+        pendingToday,
+        failedToday,
+        otherToday,
+        revenueSuccessToday: numeric(todaySuccess._sum.amount),
         statusBreakdownToday: statusToday,
-        successYesterday: yesterday._count._all,
-        revenueYesterday: numeric(yesterday._sum.amount),
-        success7d: week._count._all,
-        revenue7d: numeric(week._sum.amount),
-        success30d: month._count._all,
-        revenue30d: numeric(month._sum.amount),
-        pendingAll: pending,
+        successYesterday: yesterdaySuccess._count._all,
+        revenueSuccessYesterday: numeric(yesterdaySuccess._sum.amount),
+        success7d: weekSuccess._count._all,
+        revenueSuccess7d: numeric(weekSuccess._sum.amount),
+        success30d: monthSuccess._count._all,
+        revenueSuccess30d: numeric(monthSuccess._sum.amount),
       },
       leads: { today: leadsToday, last30d: leads30d, totalCustomers: totalUsers, activeCustomers: activeUsers },
       retention: { expiredToday, expiringNext7Days: expiring7d, expiredLast30Days: expired30d },
@@ -352,11 +382,11 @@ export async function POST(req: NextRequest) {
     const compactContext = (() => {
       switch (intent) {
         case "transactions":
-          return { transactions: context.transactions };
+          return { dataDate: context.dataDate, transactions: context.transactions };
         case "leads":
-          return { leads: context.leads, transactions: { successToday: context.transactions.successToday } };
+          return { dataDate: context.dataDate, leads: context.leads };
         case "retention":
-          return { retention: context.retention, leads: { activeCustomers: context.leads.activeCustomers } };
+          return { dataDate: context.dataDate, retention: context.retention };
         case "stock":
           return { stock: context.stock };
         case "products":
@@ -371,6 +401,7 @@ export async function POST(req: NextRequest) {
           return { operations: { pendingWarrantyClaims: context.operations.pendingWarrantyClaims, warrantyClaims30d: context.operations.warrantyClaims30d } };
         case "strategy":
           return {
+            dataDate: context.dataDate,
             transactions: context.transactions,
             leads: context.leads,
             retention: context.retention,
@@ -383,7 +414,14 @@ export async function POST(req: NextRequest) {
           };
         default:
           return {
-            transactions: { successToday: context.transactions.successToday, revenueToday: context.transactions.revenueToday, pendingAll: context.transactions.pendingAll },
+            dataDate: context.dataDate,
+            transactions: {
+              totalToday: context.transactions.totalToday,
+              successToday: context.transactions.successToday,
+              pendingToday: context.transactions.pendingToday,
+              failedToday: context.transactions.failedToday,
+              revenueSuccessToday: context.transactions.revenueSuccessToday,
+            },
             leads: { today: context.leads.today },
             retention: { expiredToday: context.retention.expiredToday, expiringNext7Days: context.retention.expiringNext7Days },
             stock: context.stock,
@@ -393,16 +431,31 @@ export async function POST(req: NextRequest) {
     })();
 
     const txChange = changeLabel(context.transactions.successToday, context.transactions.successYesterday);
-    const revenueChange = changeLabel(context.transactions.revenueToday, context.transactions.revenueYesterday);
+    const revenueChange = changeLabel(context.transactions.revenueSuccessToday, context.transactions.revenueSuccessYesterday);
 
     const buildFallbackAnswer = () => {
+      const q = lastQuestion.toLowerCase();
+
       switch (intent) {
-        case "transactions":
-          return `Hari ini ada ${context.transactions.successToday} transaksi sukses dengan omzet ${formatRupiah(context.transactions.revenueToday)}. Kemarin ada ${context.transactions.successYesterday} transaksi sukses dengan omzet ${formatRupiah(context.transactions.revenueYesterday)}. Transaksi ${txChange}; omzet ${revenueChange}.`;
+        case "transactions": {
+          if (includesAny(q, ["pending"])) {
+            return `Hari ini ada ${context.transactions.pendingToday} transaksi pending dari total ${context.transactions.totalToday} transaksi.`;
+          }
+          if (includesAny(q, ["gagal", "failed"])) {
+            return `Hari ini ada ${context.transactions.failedToday} transaksi gagal dari total ${context.transactions.totalToday} transaksi.`;
+          }
+          if (includesAny(q, ["sukses", "success", "berhasil"])) {
+            return `Hari ini ada ${context.transactions.successToday} transaksi sukses dari total ${context.transactions.totalToday} transaksi.`;
+          }
+          if (includesAny(q, ["omzet", "revenue"])) {
+            return `Omzet transaksi sukses hari ini ${formatRupiah(context.transactions.revenueSuccessToday)} dari ${context.transactions.successToday} transaksi sukses.`;
+          }
+          return `Hari ini total ${context.transactions.totalToday} transaksi: ${context.transactions.successToday} sukses, ${context.transactions.pendingToday} pending, ${context.transactions.failedToday} gagal${context.transactions.otherToday ? `, dan ${context.transactions.otherToday} status lain` : ""}. Omzet dari transaksi sukses ${formatRupiah(context.transactions.revenueSuccessToday)}.`;
+        }
         case "leads":
           return `Lead baru hari ini ${context.leads.today}. Dalam 30 hari terakhir ada ${context.leads.last30d} lead baru. Total pelanggan ${context.leads.totalCustomers}, dengan ${context.leads.activeCustomers} aktif.`;
         case "retention":
-          return `Hari ini ada ${context.retention.expiredToday} langganan/transaksi berlangganan yang masa aktifnya berakhir. Dalam 7 hari ke depan ada ${context.retention.expiringNext7Days} yang akan berakhir, dan dalam 30 hari terakhir ada ${context.retention.expiredLast30Days} yang sudah berakhir.`;
+          return `Hari ini ada ${context.retention.expiredToday} langganan/transaksi sukses yang masa aktifnya berakhir. Dalam 7 hari berikutnya ada ${context.retention.expiringNext7Days} yang akan berakhir, dan dalam 30 hari terakhir ada ${context.retention.expiredLast30Days} yang sudah berakhir.`;
         case "stock": {
           const rows = Object.entries(context.stock).map(([type, item]) => `${type === "mobile" ? "HP" : type === "desktop" ? "PC" : type}: ${item.remainingSlots}/${item.totalSlots} slot tersisa`);
           return rows.length ? `Stok jual saat ini:\n- ${rows.join("\n- ")}` : "Belum ada stok jual yang terbaca dari database.";
@@ -418,11 +471,23 @@ export async function POST(req: NextRequest) {
         case "warranty":
           return `Ada ${context.operations.pendingWarrantyClaims} klaim garansi pending. Dalam 30 hari terakhir tercatat ${context.operations.warrantyClaims30d} klaim.`;
         case "strategy":
-          return `Snapshot: hari ini ${context.transactions.successToday} transaksi sukses, omzet ${formatRupiah(context.transactions.revenueToday)}, ${context.leads.today} lead baru, ${context.retention.expiredToday} expired hari ini, ${context.operations.pendingWarrantyClaims} klaim garansi pending. Prioritaskan anomali terbesar pada transaksi, stok, dan retention.`;
+          return `Snapshot ${context.dataDate}: total ${context.transactions.totalToday} transaksi (${context.transactions.successToday} sukses, ${context.transactions.pendingToday} pending, ${context.transactions.failedToday} gagal), omzet sukses ${formatRupiah(context.transactions.revenueSuccessToday)}, ${context.leads.today} lead baru, ${context.retention.expiredToday} expired hari ini, dan ${context.operations.pendingWarrantyClaims} klaim garansi pending.`;
         default:
-          return `Hari ini: ${context.transactions.successToday} transaksi sukses, omzet ${formatRupiah(context.transactions.revenueToday)}, ${context.leads.today} lead baru, ${context.retention.expiredToday} expired, dan ${context.operations.pendingWarrantyClaims} klaim garansi pending.`;
+          return `Hari ini total ${context.transactions.totalToday} transaksi: ${context.transactions.successToday} sukses, ${context.transactions.pendingToday} pending, ${context.transactions.failedToday} gagal. Omzet sukses ${formatRupiah(context.transactions.revenueSuccessToday)}, lead baru ${context.leads.today}, expired ${context.retention.expiredToday}.`;
       }
     };
+
+    // Pertanyaan angka/fakta dijawab langsung dari DB agar 100% deterministik dan 0 token OpenAI.
+    if (!needsOpenAI(lastQuestion, intent)) {
+      return NextResponse.json({
+        answer: buildFallbackAnswer(),
+        generatedAt: context.generatedAt,
+        mode: "business-engine",
+        model: null,
+        intent,
+        dataDate: context.dataDate,
+      });
+    }
 
     const openAIKey = process.env.OPENAI_API_KEY?.trim();
     const openAIModel = process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
@@ -430,7 +495,7 @@ export async function POST(req: NextRequest) {
     if (openAIKey) {
       try {
         const recentConversation = messages.slice(-6);
-        const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Intent: ${intent}. Jawab Bahasa Indonesia secara langsung, cerdas, singkat, dan natural. DATA adalah sumber angka tunggal; jangan mengarang. Jika field tersedia, jangan pernah bilang datanya tidak tersedia. successToday = jumlah transaksi berstatus success hari ini. expiredToday = jumlah langganan/transaksi sukses yang masa aktifnya berakhir hari ini. Pahami follow-up pendek dari percakapan terakhir. Sistem read-only. Maksimal sekitar 120 kata kecuali user meminta detail.\nDATA:${JSON.stringify(compactContext)}`;
+        const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Intent: ${intent}. Jawab Bahasa Indonesia secara langsung, cerdas, singkat, dan natural. DATA adalah satu-satunya sumber angka; jangan pernah menghitung angka lain dari asumsi. Untuk pertanyaan hari ini, gunakan field berakhiran Today. totalToday = semua transaksi yang tampil pada filter tanggal hari ini di halaman Transaksi. successToday/pendingToday/failedToday adalah subset dari totalToday. Rentang tanggal transaksi sama persis dengan halaman admin. Jika user meminta analisis, analisis hanya berdasarkan DATA. Sistem read-only. Maksimal sekitar 120 kata kecuali user meminta detail.\nDATA:${JSON.stringify(compactContext)}`;
 
         const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
@@ -441,7 +506,7 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             model: openAIModel,
             stream: false,
-            temperature: 0.15,
+            temperature: 0.1,
             max_tokens: 320,
             messages: [{ role: "system", content: system }, ...recentConversation],
           }),
@@ -464,6 +529,7 @@ export async function POST(req: NextRequest) {
               mode: "openai",
               model: openAIModel,
               intent,
+              dataDate: context.dataDate,
               usage: payload?.usage
                 ? {
                     promptTokens: payload.usage.prompt_tokens,
@@ -487,6 +553,7 @@ export async function POST(req: NextRequest) {
       mode: "business-engine",
       model: openAIKey ? openAIModel : null,
       intent,
+      dataDate: context.dataDate,
     });
   } catch (error) {
     console.error("POST /api/stats AI error:", error);
