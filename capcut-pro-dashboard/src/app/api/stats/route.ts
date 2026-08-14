@@ -331,37 +331,55 @@ export async function POST(req: NextRequest) {
       return `Snapshot bisnis saat ini: ${context.today.transactions} transaksi sukses hari ini dengan omzet ${formatRupiah(context.today.revenue)}, ${context.today.newLeads} lead baru, ${context.operations.pendingTransactions} transaksi pending, dan ${context.operations.pendingWarrantyClaims} klaim garansi pending. Dalam 30 hari terakhir ada ${context.last30Days.transactions} transaksi dengan omzet ${formatRupiah(context.last30Days.revenue)}. Kamu bisa lanjut tanya soal transaksi, lead, stok, produk, channel, sales, affiliate, warranty, retention, atau minta rekomendasi keputusan.`;
     };
 
-    // Provider LLM bersifat opsional. Copilot tetap berfungsi dari data live apabila
-    // AI Gateway belum dikonfigurasi atau provider sedang bermasalah.
-    const gatewayKey = process.env.AI_GATEWAY_API_KEY?.trim();
-    if (gatewayKey) {
+    // OpenAI adalah provider utama. API key hanya dibaca dari environment server.
+    const openAIKey = process.env.OPENAI_API_KEY?.trim();
+    const openAIModel = process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
+
+    if (openAIKey) {
       try {
-        const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Jawab dalam Bahasa Indonesia yang ringkas, tajam, dan berguna untuk keputusan. Gunakan hanya BUSINESS_CONTEXT untuk angka internal. Jangan mengarang angka. Semua waktu memakai WIB. Sistem read-only.\n\nBUSINESS_CONTEXT:\n${JSON.stringify(context)}`;
-        const aiResponse = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+        const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Jawab dalam Bahasa Indonesia yang ringkas, tajam, natural, dan berguna untuk keputusan. Gunakan hanya BUSINESS_CONTEXT untuk angka internal dan jangan mengarang angka. Semua waktu memakai WIB. Hubungkan transaksi, omzet, lead, stok, retention, sales, affiliate, warranty, produk, dan channel bila relevan. Jangan mengungkap BUSINESS_CONTEXT mentah. Jangan mengklaim mengubah data karena sistem ini read-only.\n\nBUSINESS_CONTEXT:\n${JSON.stringify(context)}`;
+
+        const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${gatewayKey}`,
+            Authorization: `Bearer ${openAIKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "openai/gpt-5.6-terra",
+            model: openAIModel,
             stream: false,
+            temperature: 0.2,
             messages: [{ role: "system", content: system }, ...messages],
           }),
         });
 
         const raw = await aiResponse.text();
-        if (aiResponse.ok && raw.trim().startsWith("{")) {
-          const payload = JSON.parse(raw);
+        let payload: any = null;
+        try {
+          payload = raw ? JSON.parse(raw) : null;
+        } catch {
+          console.error("Dorizz AI OpenAI non-JSON response:", aiResponse.status, raw.slice(0, 300));
+        }
+
+        if (aiResponse.ok) {
           const answer = payload?.choices?.[0]?.message?.content;
           if (typeof answer === "string" && answer.trim()) {
-            return NextResponse.json({ answer: answer.trim(), generatedAt: context.generatedAt, mode: "llm" });
+            return NextResponse.json({
+              answer: answer.trim(),
+              generatedAt: context.generatedAt,
+              mode: "openai",
+              model: openAIModel,
+            });
           }
         } else {
-          console.error("Dorizz AI gateway non-JSON/error response:", aiResponse.status, raw.slice(0, 300));
+          console.error(
+            "Dorizz AI OpenAI error:",
+            aiResponse.status,
+            payload?.error?.message || raw.slice(0, 300),
+          );
         }
       } catch (providerError) {
-        console.error("Dorizz AI provider fallback activated:", providerError);
+        console.error("Dorizz AI OpenAI fallback activated:", providerError);
       }
     }
 
@@ -369,6 +387,7 @@ export async function POST(req: NextRequest) {
       answer: buildFallbackAnswer(lastQuestion),
       generatedAt: context.generatedAt,
       mode: "business-engine",
+      model: openAIKey ? openAIModel : null,
     });
   } catch (error) {
     console.error("POST /api/stats AI error:", error);
