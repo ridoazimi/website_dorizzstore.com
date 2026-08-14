@@ -7,11 +7,16 @@ import {
   tryDirectDorizzAnswer,
   type AiAccess,
 } from "@/lib/dorizz-ai-reader";
+import {
+  DORIZZ_AI_RELATION_TOOLS,
+  executeDorizzRelationTool,
+} from "@/lib/dorizz-ai-relations";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ALL_DORIZZ_AI_TOOLS = [...DORIZZ_AI_TOOLS, ...DORIZZ_AI_RELATION_TOOLS];
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -54,13 +59,21 @@ function shouldRequireDatabaseTool(question: string) {
     "sales",
     "affiliate",
     "afiliasi",
+    "komisi",
+    "withdrawal",
+    "penarikan",
     "warranty",
     "garansi",
     "follow up",
     "follow-up",
+    "recipient",
+    "penerima",
     "pesan",
     "voucher",
+    "tag",
     "absensi",
+    "jadwal",
+    "shift",
     "tugas",
     "admin",
     "database",
@@ -264,10 +277,11 @@ ATURAN WAJIB:
 4. Jika user bertanya customer yang expired/berakhir pada tanggal tertentu, gunakan domain expirations. Untuk "hari ini", gunakan period=today.
 5. Jika user bertanya target market/strategi, jangan memberi jawaban generik. Gunakan beberapa metrik relevan, terutama group_by=product, source, customer_type, dan summary bila perlu. Jelaskan bahwa database tidak punya demografi seperti umur/gender/kota jika memang field itu tidak tersedia; jangan mengarang demografi.
 6. Untuk transaksi, tanggal mengikuti definisi halaman Transaksi admin agar angka konsisten dengan tabel admin.
-7. Password admin, password sales/affiliate, password akun stok, API key, JWT secret, dan credential lain sengaja tidak tersedia ke AI. Jangan meminta atau mengarangnya.
-8. Hormati permission: jika tool mengembalikan akses ditolak, jelaskan singkat tanpa mencoba menebak datanya.
-9. Jawab dalam Bahasa Indonesia, natural, langsung, dan berbasis data. Untuk daftar customer, gunakan format yang mudah dibaca. Untuk analisis, jelaskan bukti angka dan implikasi bisnis.
-10. Hemat token: panggil hanya tool yang relevan dan batasi data seperlunya. Maksimal sekitar 250 kata kecuali user meminta detail panjang.`;
+7. Untuk commission, withdrawal, recipient follow-up, customer tag assignment, jadwal admin, atau task assignment, gunakan query_dorizz_relation_data.
+8. Password admin, password sales/affiliate, password akun stok, API key, JWT secret, dan credential lain sengaja tidak tersedia ke AI. Jangan meminta atau mengarangnya.
+9. Hormati permission: jika tool mengembalikan akses ditolak, jelaskan singkat tanpa mencoba menebak datanya.
+10. Jawab dalam Bahasa Indonesia, natural, langsung, dan berbasis data. Untuk daftar customer, gunakan format yang mudah dibaca. Untuk analisis, jelaskan bukti angka dan implikasi bisnis.
+11. Hemat token: panggil hanya tool yang relevan dan batasi data seperlunya. Maksimal sekitar 250 kata kecuali user meminta detail panjang.`;
 
     const initialMessages: any[] = [
       { role: "system", content: system },
@@ -278,7 +292,7 @@ ATURAN WAJIB:
       {
         model: openAIModel,
         messages: initialMessages,
-        tools: DORIZZ_AI_TOOLS,
+        tools: ALL_DORIZZ_AI_TOOLS,
         tool_choice: shouldRequireDatabaseTool(lastQuestion) ? "required" : "auto",
         parallel_tool_calls: true,
         temperature: 0.15,
@@ -308,7 +322,9 @@ ATURAN WAJIB:
       toolCalls.map(async (call: any) => {
         const name = String(call?.function?.name || "");
         const args = parseToolArgs(String(call?.function?.arguments || "{}"));
-        const result = await executeDorizzAiTool(name, args, access);
+        const result = name === "query_dorizz_relation_data"
+          ? await executeDorizzRelationTool(name, args, access)
+          : await executeDorizzAiTool(name, args, access);
         return {
           name,
           message: {
@@ -334,7 +350,7 @@ ATURAN WAJIB:
       {
         model: openAIModel,
         messages: secondMessages,
-        tools: DORIZZ_AI_TOOLS,
+        tools: ALL_DORIZZ_AI_TOOLS,
         tool_choice: "none",
         temperature: 0.15,
         max_tokens: 700,
