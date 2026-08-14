@@ -1,6 +1,7 @@
 {
   "name": "capcut-pro-dashboard",
   "version": "0.1.0",
+  "description": "Dorizz Store admin dashboard",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
