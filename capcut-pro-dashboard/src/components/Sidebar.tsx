@@ -26,13 +26,25 @@ import {
   Send,
   Loader2,
   Sparkles,
-  RotateCcw,
+  History,
+  SquarePen,
+  Trash2,
+  ChevronLeft,
 } from "lucide-react";
 import type { PermissionKey } from "@/lib/auth-shared";
 
 type AIMessage = {
   role: "user" | "assistant";
   content: string;
+};
+
+type AIConversation = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  lastMessage: string | null;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -66,10 +78,7 @@ const aiQuickQuestions = [
 
 async function readJsonResponse(res: Response): Promise<JsonRecord> {
   const raw = await res.text();
-  if (!raw.trim()) {
-    throw new Error(`Server Dorizz AI tidak mengembalikan data (HTTP ${res.status}).`);
-  }
-
+  if (!raw.trim()) throw new Error(`Server Dorizz AI tidak mengembalikan data (HTTP ${res.status}).`);
   try {
     return JSON.parse(raw) as JsonRecord;
   } catch {
@@ -86,6 +95,17 @@ async function readJsonResponse(res: Response): Promise<JsonRecord> {
   }
 }
 
+function formatHistoryTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("id-ID", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const { isOpen, close } = useMobileNav();
@@ -96,6 +116,12 @@ export default function Sidebar() {
   const [aiInput, setAiInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [historyError, setHistoryError] = useState("");
+  const [showAIHistory, setShowAIHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [conversations, setConversations] = useState<AIConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [activeConversationTitle, setActiveConversationTitle] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -117,6 +143,107 @@ export default function Sidebar() {
   const handleLinkClick = () => close();
   const canUseAI = isDeveloper || hasPermission("page_ai");
 
+  async function loadAIHistory() {
+    if (!canUseAI) return;
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const res = await fetch("/api/ai/conversations", { cache: "no-store" });
+      const data = await readJsonResponse(res);
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Gagal mengambil riwayat.");
+      setConversations(Array.isArray(data.conversations) ? data.conversations as unknown as AIConversation[] : []);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : "Riwayat percakapan gagal dimuat.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function startNewConversation() {
+    setActiveConversationId(null);
+    setActiveConversationTitle(null);
+    setAiMessages([]);
+    setAiInput("");
+    setAiError("");
+    setHistoryError("");
+    setShowAIHistory(false);
+  }
+
+  async function openConversation(id: string) {
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const res = await fetch(`/api/ai/conversations/${id}`, { cache: "no-store" });
+      const data = await readJsonResponse(res);
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Percakapan gagal dibuka.");
+      const conversation = data.conversation as Record<string, unknown> | undefined;
+      const rawMessages = Array.isArray(data.messages) ? data.messages as Array<Record<string, unknown>> : [];
+      const loadedMessages: AIMessage[] = rawMessages
+        .filter((item) => (item.role === "user" || item.role === "assistant") && typeof item.content === "string")
+        .map((item) => ({ role: item.role as AIMessage["role"], content: String(item.content) }));
+
+      setActiveConversationId(id);
+      setActiveConversationTitle(typeof conversation?.title === "string" ? conversation.title : "Percakapan");
+      setAiMessages(loadedMessages);
+      setAiError("");
+      setShowAIHistory(false);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : "Percakapan gagal dibuka.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function deleteConversation(id: string) {
+    if (!window.confirm("Hapus riwayat percakapan ini?")) return;
+    try {
+      const res = await fetch(`/api/ai/conversations/${id}`, { method: "DELETE" });
+      const data = await readJsonResponse(res);
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Gagal menghapus percakapan.");
+      if (activeConversationId === id) startNewConversation();
+      await loadAIHistory();
+      setShowAIHistory(true);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : "Gagal menghapus percakapan.");
+    }
+  }
+
+  async function persistAITurn(userText: string, assistantText: string) {
+    try {
+      let conversationId = activeConversationId;
+      let title = activeConversationTitle;
+
+      if (!conversationId) {
+        const createRes = await fetch("/api/ai/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: userText }),
+        });
+        const createData = await readJsonResponse(createRes);
+        if (!createRes.ok) throw new Error(typeof createData.error === "string" ? createData.error : "Gagal membuat riwayat.");
+        const conversation = createData.conversation as Record<string, unknown> | undefined;
+        conversationId = typeof conversation?.id === "string" ? conversation.id : null;
+        title = typeof conversation?.title === "string" ? conversation.title : userText.slice(0, 120);
+        if (!conversationId) throw new Error("ID percakapan tidak tersedia.");
+        setActiveConversationId(conversationId);
+        setActiveConversationTitle(title);
+      }
+
+      const saveRes = await fetch(`/api/ai/conversations/${conversationId}/turns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: userText, assistant: assistantText }),
+      });
+      const saveData = await readJsonResponse(saveRes);
+      if (!saveRes.ok) throw new Error(typeof saveData.error === "string" ? saveData.error : "Riwayat gagal disimpan.");
+      setHistoryError("");
+      void loadAIHistory();
+    } catch (error) {
+      console.error("Dorizz AI history save error:", error);
+      setHistoryError("Jawaban berhasil, tetapi riwayat percakapan belum tersimpan. Coba refresh lalu kirim lagi jika perlu.");
+    }
+  }
+
   async function sendAI(question?: string) {
     const text = (question ?? aiInput).trim();
     if (!text || aiLoading) return;
@@ -125,15 +252,13 @@ export default function Sidebar() {
     setAiMessages(nextMessages);
     setAiInput("");
     setAiError("");
+    setHistoryError("");
     setAiLoading(true);
 
     try {
       const res = await fetch("/api/stats", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         cache: "no-store",
         body: JSON.stringify({ messages: nextMessages }),
       });
@@ -146,6 +271,7 @@ export default function Sidebar() {
       if (!answer) throw new Error("Dorizz AI tidak mengembalikan jawaban.");
 
       setAiMessages((current) => [...current, { role: "assistant", content: answer }]);
+      await persistAITurn(text, answer);
     } catch (error) {
       setAiError(error instanceof Error ? error.message : "Terjadi kesalahan saat menghubungi Dorizz AI");
     } finally {
@@ -207,7 +333,6 @@ export default function Sidebar() {
         <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] px-4 mb-3">Menu Utama</p>
           {navItems.map(renderNavItem)}
-
           <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] px-4 mb-3 mt-6">Marketing</p>
           {marketingItems.map(renderNavItem)}
         </nav>
@@ -217,6 +342,8 @@ export default function Sidebar() {
             <button
               onClick={() => {
                 setShowAI(true);
+                setShowAIHistory(false);
+                void loadAIHistory();
                 close();
               }}
               className="sidebar-link w-full text-left"
@@ -258,119 +385,182 @@ export default function Sidebar() {
             className="fixed z-[60] inset-3 sm:inset-auto sm:right-5 sm:bottom-5 sm:w-[430px] sm:h-[650px] rounded-2xl overflow-hidden flex flex-col"
             style={{ background: "rgba(12,14,27,.98)", border: "1px solid rgba(129,140,248,.25)", boxShadow: "0 24px 80px rgba(0,0,0,.5)" }}
           >
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-[rgba(129,140,248,.15)]">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(99,102,241,.15)" }}>
-                <Bot size={21} className="text-[#818cf8]" />
-              </div>
+            <div className="flex items-center gap-3 px-4 py-4 border-b border-[rgba(129,140,248,.15)]">
+              {showAIHistory ? (
+                <button onClick={() => setShowAIHistory(false)} className="w-9 h-9 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text-primary)]" title="Kembali ke chat">
+                  <ChevronLeft size={18} />
+                </button>
+              ) : (
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(99,102,241,.15)" }}>
+                  <Bot size={21} className="text-[#818cf8]" />
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 className="font-semibold text-[var(--text-primary)]">Dorizz AI</h2>
-                  <span className="text-[9px] font-bold tracking-wide px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">READ ONLY</span>
+                  <h2 className="font-semibold text-[var(--text-primary)]">{showAIHistory ? "Riwayat Dorizz AI" : "Dorizz AI"}</h2>
+                  {!showAIHistory && <span className="text-[9px] font-bold tracking-wide px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400">READ ONLY</span>}
                 </div>
-                <p className="text-xs text-[var(--text-muted)]">Copilot keputusan bisnis</p>
+                <p className="text-xs text-[var(--text-muted)] truncate">
+                  {showAIHistory ? `${conversations.length} percakapan tersimpan` : activeConversationTitle || "Copilot keputusan bisnis"}
+                </p>
               </div>
+              {!showAIHistory && (
+                <button
+                  onClick={() => {
+                    setShowAIHistory(true);
+                    void loadAIHistory();
+                  }}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text-primary)]"
+                  title="Riwayat percakapan"
+                >
+                  <History size={16} />
+                </button>
+              )}
               <button
-                onClick={() => {
-                  setAiMessages([]);
-                  setAiError("");
-                }}
+                onClick={startNewConversation}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text-primary)]"
-                title="Reset percakapan"
+                title="Chat baru"
               >
-                <RotateCcw size={16} />
+                <SquarePen size={16} />
               </button>
               <button onClick={() => setShowAI(false)} className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text-primary)]" aria-label="Tutup">
                 <X size={18} />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-              {aiMessages.length === 0 && !aiLoading && (
-                <div className="space-y-4">
-                  <div className="rounded-xl p-4 border border-[rgba(129,140,248,.12)] bg-white/[.02]">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Sparkles size={15} className="text-[#818cf8]" />
-                      <p className="text-sm font-medium text-[var(--text-primary)]">Tanya data atau keputusan bisnis</p>
-                    </div>
-                    <p className="text-xs leading-relaxed text-[var(--text-muted)]">Saya membaca data bisnis secara read-only. Pilih pertanyaan cepat atau tulis sendiri.</p>
+            {showAIHistory ? (
+              <div className="flex-1 overflow-y-auto p-3">
+                {historyLoading && conversations.length === 0 ? (
+                  <div className="h-full flex items-center justify-center gap-2 text-sm text-[var(--text-muted)]"><Loader2 size={16} className="animate-spin" /> Memuat riwayat...</div>
+                ) : conversations.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center px-8">
+                    <History size={28} className="text-[#818cf8] mb-3" />
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">Belum ada riwayat</p>
+                    <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">Percakapan akan otomatis tersimpan setelah Dorizz AI selesai menjawab.</p>
+                    <button onClick={startNewConversation} className="mt-4 px-4 py-2 rounded-xl text-xs font-semibold text-white" style={{ background: "linear-gradient(135deg,#6366f1,#7c3aed)" }}>Mulai chat baru</button>
                   </div>
+                ) : (
                   <div className="space-y-2">
-                    {aiQuickQuestions.map((question) => (
-                      <button
-                        key={question}
-                        onClick={() => sendAI(question)}
-                        className="w-full text-left text-xs leading-relaxed rounded-xl px-3.5 py-3 border border-[rgba(129,140,248,.14)] bg-white/[.025] text-[var(--text-secondary)] hover:bg-[rgba(99,102,241,.08)] hover:border-[rgba(129,140,248,.28)] transition-colors"
+                    {conversations.map((conversation) => (
+                      <div
+                        key={conversation.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => void openConversation(conversation.id)}
+                        onKeyDown={(event) => { if (event.key === "Enter") void openConversation(conversation.id); }}
+                        className={`group rounded-xl border p-3 cursor-pointer transition-colors ${activeConversationId === conversation.id ? "bg-[rgba(99,102,241,.11)] border-[rgba(129,140,248,.3)]" : "bg-white/[.025] border-white/[.07] hover:bg-white/[.045] hover:border-white/[.12]"}`}
                       >
-                        {question}
-                      </button>
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{conversation.title}</p>
+                            <p className="text-[11px] text-[var(--text-muted)] mt-1 line-clamp-2 leading-relaxed">{conversation.lastMessage || "Percakapan Dorizz AI"}</p>
+                            <div className="flex items-center gap-2 mt-2 text-[10px] text-[var(--text-muted)]">
+                              <span>{formatHistoryTime(conversation.updatedAt)}</span>
+                              <span>•</span>
+                              <span>{conversation.messageCount} pesan</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void deleteConversation(conversation.id);
+                            }}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 opacity-60 group-hover:opacity-100"
+                            title="Hapus percakapan"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+                {historyError && <div className="mt-3 rounded-xl px-3.5 py-3 text-xs border border-amber-500/25 bg-amber-500/[.08] text-amber-300">{historyError}</div>}
+              </div>
+            ) : (
+              <>
+                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                  {aiMessages.length === 0 && !aiLoading && (
+                    <div className="space-y-4">
+                      <div className="rounded-xl p-4 border border-[rgba(129,140,248,.12)] bg-white/[.02]">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Sparkles size={15} className="text-[#818cf8]" />
+                          <p className="text-sm font-medium text-[var(--text-primary)]">Tanya data atau keputusan bisnis</p>
+                        </div>
+                        <p className="text-xs leading-relaxed text-[var(--text-muted)]">Chat akan tersimpan otomatis. Kamu bisa membuka dan melanjutkannya lagi dari menu Riwayat.</p>
+                      </div>
+                      <div className="space-y-2">
+                        {aiQuickQuestions.map((question) => (
+                          <button
+                            key={question}
+                            onClick={() => sendAI(question)}
+                            className="w-full text-left text-xs leading-relaxed rounded-xl px-3.5 py-3 border border-[rgba(129,140,248,.14)] bg-white/[.025] text-[var(--text-secondary)] hover:bg-[rgba(99,102,241,.08)] hover:border-[rgba(129,140,248,.28)] transition-colors"
+                          >
+                            {question}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-              {aiMessages.map((message, index) => (
-                <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                      message.role === "user"
-                        ? "text-white rounded-br-md"
-                        : "text-[var(--text-secondary)] border border-white/[.08] bg-white/[.035] rounded-bl-md"
-                    }`}
-                    style={message.role === "user" ? { background: "linear-gradient(135deg,#6366f1,#7c3aed)" } : undefined}
-                  >
-                    {message.content}
-                  </div>
-                </div>
-              ))}
+                  {aiMessages.map((message, index) => (
+                    <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${message.role === "user" ? "text-white rounded-br-md" : "text-[var(--text-secondary)] border border-white/[.08] bg-white/[.035] rounded-bl-md"}`}
+                        style={message.role === "user" ? { background: "linear-gradient(135deg,#6366f1,#7c3aed)" } : undefined}
+                      >
+                        {message.content}
+                      </div>
+                    </div>
+                  ))}
 
-              {aiLoading && (
-                <div className="flex justify-start">
-                  <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-md px-4 py-3 border border-white/[.08] bg-white/[.035] text-sm text-[var(--text-muted)]">
-                    <Loader2 size={15} className="animate-spin" />
-                    Membaca data bisnis...
-                  </div>
-                </div>
-              )}
+                  {aiLoading && (
+                    <div className="flex justify-start">
+                      <div className="inline-flex items-center gap-2 rounded-2xl rounded-bl-md px-4 py-3 border border-white/[.08] bg-white/[.035] text-sm text-[var(--text-muted)]">
+                        <Loader2 size={15} className="animate-spin" /> Membaca data bisnis...
+                      </div>
+                    </div>
+                  )}
 
-              {aiError && (
-                <div className="rounded-xl px-3.5 py-3 text-xs leading-relaxed border border-rose-500/25 bg-rose-500/[.08] text-rose-300">
-                  {aiError}
+                  {aiError && <div className="rounded-xl px-3.5 py-3 text-xs leading-relaxed border border-rose-500/25 bg-rose-500/[.08] text-rose-300">{aiError}</div>}
+                  {historyError && <div className="rounded-xl px-3.5 py-3 text-xs leading-relaxed border border-amber-500/25 bg-amber-500/[.08] text-amber-300">{historyError}</div>}
                 </div>
-              )}
-            </div>
 
-            <div className="p-3 border-t border-[rgba(129,140,248,.15)]">
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  sendAI();
-                }}
-                className="flex gap-2 rounded-xl border border-white/[.1] bg-white/[.035] p-2 focus-within:border-[rgba(129,140,248,.4)]"
-              >
-                <textarea
-                  value={aiInput}
-                  onChange={(event) => setAiInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
+                <div className="p-3 border-t border-[rgba(129,140,248,.15)]">
+                  <form
+                    onSubmit={(event) => {
                       event.preventDefault();
                       sendAI();
-                    }
-                  }}
-                  rows={1}
-                  placeholder="Tanya data atau minta saran keputusan..."
-                  className="flex-1 resize-none bg-transparent outline-none px-2 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] max-h-24"
-                />
-                <button
-                  type="submit"
-                  disabled={aiLoading || !aiInput.trim()}
-                  className="w-9 h-9 rounded-lg flex items-center justify-center text-white disabled:opacity-30 disabled:cursor-not-allowed"
-                  style={{ background: "linear-gradient(135deg,#6366f1,#7c3aed)" }}
-                  aria-label="Kirim pertanyaan"
-                >
-                  {aiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                </button>
-              </form>
-            </div>
+                    }}
+                    className="flex gap-2 rounded-xl border border-white/[.1] bg-white/[.035] p-2 focus-within:border-[rgba(129,140,248,.4)]"
+                  >
+                    <textarea
+                      value={aiInput}
+                      onChange={(event) => setAiInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          sendAI();
+                        }
+                      }}
+                      rows={1}
+                      placeholder="Tanya data atau minta saran keputusan..."
+                      className="flex-1 resize-none bg-transparent outline-none px-2 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] max-h-24"
+                    />
+                    <button
+                      type="submit"
+                      disabled={aiLoading || !aiInput.trim()}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                      style={{ background: "linear-gradient(135deg,#6366f1,#7c3aed)" }}
+                      aria-label="Kirim pertanyaan"
+                    >
+                      {aiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                    </button>
+                  </form>
+                </div>
+              </>
+            )}
           </section>
         </>
       )}
