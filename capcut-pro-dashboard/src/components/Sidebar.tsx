@@ -35,16 +35,15 @@ type AIMessage = {
   content: string;
 };
 
-// ─── Navigation config ────────────────────────────────────────────────────────
+type JsonRecord = Record<string, unknown>;
 
 const navItems: { href: string; label: string; icon: React.ElementType; permission?: PermissionKey }[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }, // Always visible
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/transactions", label: "Transaksi", icon: ArrowLeftRight, permission: "page_transactions" },
   { href: "/users", label: "Pelanggan", icon: Users, permission: "page_customers" },
   { href: "/stock", label: "Stok Akun", icon: Package, permission: "page_stock" },
   { href: "/dashboard/products", label: "Produk Marketplace", icon: ShoppingBag, permission: "page_marketplace" },
   { href: "/dashboard/warranty", label: "Klaim Garansi", icon: ShieldCheck, permission: "page_stock" },
-
   { href: "/messages", label: "Riwayat Pesan", icon: MessageSquare, permission: "page_messages" },
 ];
 
@@ -65,7 +64,27 @@ const aiQuickQuestions = [
   "Analisis 30 hari terakhir dan beri 3 keputusan terpenting.",
 ];
 
-// ─── Component ────────────────────────────────────────────────────────────────
+async function readJsonResponse(res: Response): Promise<JsonRecord> {
+  const raw = await res.text();
+  if (!raw.trim()) {
+    throw new Error(`Server Dorizz AI tidak mengembalikan data (HTTP ${res.status}).`);
+  }
+
+  try {
+    return JSON.parse(raw) as JsonRecord;
+  } catch {
+    console.error("Dorizz AI returned non-JSON response", {
+      status: res.status,
+      contentType: res.headers.get("content-type"),
+      preview: raw.slice(0, 200),
+    });
+    throw new Error(
+      res.ok
+        ? "Respons Dorizz AI tidak valid. Silakan refresh halaman lalu coba lagi."
+        : `Server Dorizz AI sedang bermasalah (HTTP ${res.status}). Silakan coba lagi.`,
+    );
+  }
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -82,10 +101,9 @@ export default function Sidebar() {
     const fetchStats = async () => {
       try {
         const res = await fetch("/api/stats");
-        const data = await res.json();
-        if (data.pendingWarrantyClaims !== undefined) {
-          setPendingClaimsCount(data.pendingWarrantyClaims);
-        }
+        const data = await readJsonResponse(res);
+        const count = data.pendingWarrantyClaims;
+        if (typeof count === "number") setPendingClaimsCount(count);
       } catch (err) {
         console.error("Failed to fetch pending claims count:", err);
       }
@@ -112,14 +130,24 @@ export default function Sidebar() {
     try {
       const res = await fetch("/api/stats", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        cache: "no-store",
         body: JSON.stringify({ messages: nextMessages }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "AI gagal merespons");
-      setAiMessages((current) => [...current, { role: "assistant", content: data.answer }]);
+
+      const data = await readJsonResponse(res);
+      const errorMessage = typeof data.error === "string" ? data.error : "AI gagal merespons";
+      if (!res.ok) throw new Error(errorMessage);
+
+      const answer = typeof data.answer === "string" ? data.answer.trim() : "";
+      if (!answer) throw new Error("Dorizz AI tidak mengembalikan jawaban.");
+
+      setAiMessages((current) => [...current, { role: "assistant", content: answer }]);
     } catch (error) {
-      setAiError(error instanceof Error ? error.message : "Terjadi kesalahan saat menghubungi AI");
+      setAiError(error instanceof Error ? error.message : "Terjadi kesalahan saat menghubungi Dorizz AI");
     } finally {
       setAiLoading(false);
     }
@@ -131,11 +159,7 @@ export default function Sidebar() {
 
     if (!allowed) {
       return (
-        <div
-          key={item.href}
-          className="sidebar-link opacity-30 cursor-not-allowed"
-          title="Akses tidak diizinkan"
-        >
+        <div key={item.href} className="sidebar-link opacity-30 cursor-not-allowed" title="Akses tidak diizinkan">
           <item.icon size={18} />
           {item.label}
           <Lock size={11} className="ml-auto flex-shrink-0" />
@@ -144,12 +168,7 @@ export default function Sidebar() {
     }
 
     return (
-      <Link
-        key={item.href}
-        href={item.href}
-        className={`sidebar-link ${isActive ? "active" : ""}`}
-        onClick={handleLinkClick}
-      >
+      <Link key={item.href} href={item.href} className={`sidebar-link ${isActive ? "active" : ""}`} onClick={handleLinkClick}>
         <item.icon size={18} />
         <span className="flex-1">{item.label}</span>
         {item.label === "Klaim Garansi" && pendingClaimsCount > 0 && (
@@ -163,13 +182,7 @@ export default function Sidebar() {
 
   return (
     <>
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
-          onClick={close}
-          aria-hidden="true"
-        />
-      )}
+      {isOpen && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden" onClick={close} aria-hidden="true" />}
 
       <aside
         className={`sidebar fixed top-0 left-0 h-screen w-[260px] flex flex-col z-40 transition-transform duration-300 ease-in-out
@@ -178,10 +191,7 @@ export default function Sidebar() {
       >
         <div className="flex items-center justify-between px-6 py-5 border-b border-[rgba(99,102,241,0.15)]">
           <div className="flex items-center gap-3">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: "var(--gradient-primary)" }}
-            >
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "var(--gradient-primary)" }}>
               <ShoppingBag size={18} className="text-white" />
             </div>
             <div>
@@ -189,30 +199,26 @@ export default function Sidebar() {
               <p className="text-[11px] text-[var(--text-muted)]">Management Dashboard</p>
             </div>
           </div>
-          <button
-            onClick={close}
-            className="lg:hidden flex items-center justify-center w-8 h-8 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-colors"
-          >
+          <button onClick={close} className="lg:hidden flex items-center justify-center w-8 h-8 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-white/10 transition-colors">
             <X size={18} />
           </button>
         </div>
 
         <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] px-4 mb-3">
-            Menu Utama
-          </p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] px-4 mb-3">Menu Utama</p>
           {navItems.map(renderNavItem)}
 
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] px-4 mb-3 mt-6">
-            Marketing
-          </p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] px-4 mb-3 mt-6">Marketing</p>
           {marketingItems.map(renderNavItem)}
         </nav>
 
         <div className="px-4 pt-3 border-t border-[rgba(99,102,241,0.15)]">
           {canUseAI ? (
             <button
-              onClick={() => { setShowAI(true); close(); }}
+              onClick={() => {
+                setShowAI(true);
+                close();
+              }}
               className="sidebar-link w-full text-left"
               style={{ background: "linear-gradient(135deg, rgba(99,102,241,.12), rgba(124,58,237,.08))" }}
             >
@@ -230,12 +236,8 @@ export default function Sidebar() {
         </div>
 
         <div className="px-4 py-4">
-          {(isDeveloper || hasPermission("page_settings")) ? (
-            <Link
-              href="/settings"
-              className={`sidebar-link ${pathname === "/settings" ? "active" : ""}`}
-              onClick={handleLinkClick}
-            >
+          {isDeveloper || hasPermission("page_settings") ? (
+            <Link href="/settings" className={`sidebar-link ${pathname === "/settings" ? "active" : ""}`} onClick={handleLinkClick}>
               <Settings size={18} />
               Pengaturan
             </Link>
@@ -251,11 +253,7 @@ export default function Sidebar() {
 
       {showAI && canUseAI && (
         <>
-          <button
-            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px]"
-            onClick={() => setShowAI(false)}
-            aria-label="Tutup Dorizz AI"
-          />
+          <button className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px]" onClick={() => setShowAI(false)} aria-label="Tutup Dorizz AI" />
           <section
             className="fixed z-[60] inset-3 sm:inset-auto sm:right-5 sm:bottom-5 sm:w-[430px] sm:h-[650px] rounded-2xl overflow-hidden flex flex-col"
             style={{ background: "rgba(12,14,27,.98)", border: "1px solid rgba(129,140,248,.25)", boxShadow: "0 24px 80px rgba(0,0,0,.5)" }}
@@ -291,7 +289,7 @@ export default function Sidebar() {
                   <div className="text-center mb-5">
                     <Sparkles size={24} className="text-[#818cf8] mx-auto mb-3" />
                     <p className="text-sm font-semibold text-[var(--text-primary)]">Mau cek apa hari ini?</p>
-                    <p className="text-xs text-[var(--text-muted)] mt-1">AI membaca data bisnis terbaru saat kamu bertanya.</p>
+                    <p className="text-xs text-[var(--text-muted)] mt-1">Copilot membaca data bisnis terbaru saat kamu bertanya.</p>
                   </div>
                   <div className="space-y-2">
                     {aiQuickQuestions.map((question) => (
@@ -304,7 +302,14 @@ export default function Sidebar() {
               ) : (
                 aiMessages.map((message, index) => (
                   <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className="max-w-[86%] rounded-2xl px-3.5 py-2.5 text-xs leading-5 whitespace-pre-wrap" style={message.role === "user" ? { background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "white" } : { background: "rgba(255,255,255,.045)", border: "1px solid rgba(255,255,255,.06)", color: "var(--text-primary)" }}>
+                    <div
+                      className="max-w-[86%] rounded-2xl px-3.5 py-2.5 text-xs leading-5 whitespace-pre-wrap"
+                      style={
+                        message.role === "user"
+                          ? { background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "white" }
+                          : { background: "rgba(255,255,255,.045)", border: "1px solid rgba(255,255,255,.06)", color: "var(--text-primary)" }
+                      }
+                    >
                       {message.content}
                     </div>
                   </div>
@@ -323,7 +328,14 @@ export default function Sidebar() {
               )}
             </div>
 
-            <form onSubmit={(event) => { event.preventDefault(); void sendAI(); }} className="p-3" style={{ borderTop: "1px solid rgba(255,255,255,.07)" }}>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void sendAI();
+              }}
+              className="p-3"
+              style={{ borderTop: "1px solid rgba(255,255,255,.07)" }}
+            >
               <div className="flex items-end gap-2 rounded-xl p-2" style={{ background: "rgba(255,255,255,.035)", border: "1px solid rgba(255,255,255,.07)" }}>
                 <textarea
                   value={aiInput}
