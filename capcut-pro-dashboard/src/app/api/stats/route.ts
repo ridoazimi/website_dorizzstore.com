@@ -7,6 +7,25 @@ export const maxDuration = 30;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type Intent =
+  | "casual"
+  | "transactions"
+  | "leads"
+  | "retention"
+  | "stock"
+  | "products"
+  | "channels"
+  | "sales"
+  | "affiliates"
+  | "warranty"
+  | "strategy"
+  | "overview";
+
 function wibRange() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Jakarta",
@@ -43,6 +62,85 @@ function changeLabel(current: number, previous: number) {
   return `${direction} ${Math.abs(percent).toFixed(1)}%`;
 }
 
+function includesAny(text: string, words: string[]) {
+  return words.some((word) => text.includes(word));
+}
+
+function detectIntent(messages: ChatMessage[]): Intent {
+  const latest = messages[messages.length - 1]?.content.toLowerCase() || "";
+  const recentUsers = messages
+    .filter((message) => message.role === "user")
+    .slice(-3)
+    .map((message) => message.content.toLowerCase())
+    .join(" ");
+
+  if (
+    includesAny(latest, [
+      "kamu lagi ngapain",
+      "lagi ngapain",
+      "siapa kamu",
+      "kamu siapa",
+      "halo",
+      "hai",
+      "hello",
+      "makasih",
+      "terima kasih",
+    ])
+  ) {
+    return "casual";
+  }
+
+  if (includesAny(latest, ["expired", "expire", "berakhir", "renewal", "perpanjang", "retensi", "retention", "churn"])) {
+    return "retention";
+  }
+  if (includesAny(latest, ["stok", "stock", "restok", "slot"])) return "stock";
+  if (includesAny(latest, ["lead", "pelanggan baru", "customer baru", "user baru"])) return "leads";
+  if (includesAny(latest, ["warranty", "garansi", "klaim"])) return "warranty";
+  if (includesAny(latest, ["affiliate", "afiliasi", "referral", "komisi"])) return "affiliates";
+  if (includesAny(latest, ["sales", "closer", "closing", "tim jual"])) return "sales";
+  if (includesAny(latest, ["channel", "kanal", "sumber", "source"])) return "channels";
+  if (includesAny(latest, ["produk", "terlaris", "best seller", "bestseller"])) return "products";
+  if (
+    includesAny(latest, [
+      "transaksi",
+      "order",
+      "orderan",
+      "omzet",
+      "revenue",
+      "penjualan",
+      "sukses",
+      "success",
+      "pending",
+      "berhasil",
+    ])
+  ) {
+    return "transactions";
+  }
+  if (includesAny(latest, ["analisis", "keputusan", "saran", "rekomendasi", "prioritas", "strategi", "kenapa", "mengapa" ])) {
+    return "strategy";
+  }
+
+  // Follow-up pendek seperti "yang sukses berapa" / "kalau hari ini?"
+  if (includesAny(recentUsers, ["transaksi", "order", "omzet", "sukses", "success"])) return "transactions";
+  if (includesAny(recentUsers, ["expired", "berakhir", "retensi", "renewal"])) return "retention";
+  if (includesAny(recentUsers, ["stok", "restok"])) return "stock";
+  if (includesAny(recentUsers, ["lead", "pelanggan baru"])) return "leads";
+
+  return "overview";
+}
+
+function casualAnswer(question: string) {
+  const q = question.toLowerCase();
+  if (includesAny(q, ["kamu lagi ngapain", "lagi ngapain"])) {
+    return "Saya sedang siap membaca data Dorizz Store dan membantu kamu mengambil keputusan. Tanya saja transaksi, omzet, lead, stok, expired, sales, affiliate, atau performa bisnis.";
+  }
+  if (includesAny(q, ["siapa kamu", "kamu siapa"])) {
+    return "Saya Dorizz AI, copilot bisnis internal Dorizz Store. Saya membaca data bisnis secara read-only dan membantu menjawab pertanyaan atau memberi rekomendasi.";
+  }
+  if (includesAny(q, ["makasih", "terima kasih"])) return "Siap. Kalau ada angka atau keputusan bisnis yang mau dicek, langsung tanya saja.";
+  return "Halo. Saya siap bantu cek data dan keputusan bisnis Dorizz Store.";
+}
+
 // GET /api/stats - Statistik untuk halaman Dashboard Overview
 export async function GET() {
   const auth = await requireAuth();
@@ -61,7 +159,6 @@ export async function GET() {
       prisma.transaction.count(),
       prisma.user.count(),
       prisma.stockAccount.count({ where: { status: "available" } }),
-
       prisma.appSetting.findUnique({ where: { key: "customer_active_days" } }).then(async (setting) => {
         const activeDays = Math.max(1, parseInt(setting?.value || "60") || 60);
         return prisma.user.count({
@@ -69,23 +166,17 @@ export async function GET() {
             transactions: {
               some: {
                 status: "success",
-                purchaseDate: {
-                  gte: new Date(Date.now() - activeDays * DAY_MS),
-                },
+                purchaseDate: { gte: new Date(Date.now() - activeDays * DAY_MS) },
               },
             },
           },
         });
       }),
-
       prisma.transaction.findMany({
-        include: {
-          user: { select: { name: true, email: true, whatsapp: true } },
-        },
+        include: { user: { select: { name: true, email: true, whatsapp: true } } },
         orderBy: { purchaseDate: "desc" },
         take: 5,
       }),
-
       prisma.transaction.findMany({
         where: {
           warrantyExpiredAt: {
@@ -94,13 +185,10 @@ export async function GET() {
           },
           status: "success",
         },
-        include: {
-          user: { select: { name: true, whatsapp: true, followUpStatus: true } },
-        },
+        include: { user: { select: { name: true, whatsapp: true, followUpStatus: true } } },
         orderBy: { warrantyExpiredAt: "asc" },
         take: 20,
       }),
-
       prisma.warrantyClaim.count({ where: { status: "pending" } }),
     ]);
 
@@ -126,22 +214,36 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const messages = Array.isArray(body?.messages)
+    const messages: ChatMessage[] = Array.isArray(body?.messages)
       ? body.messages
           .filter((item: unknown) => {
             if (!item || typeof item !== "object") return false;
             const value = item as Record<string, unknown>;
             return (value.role === "user" || value.role === "assistant") && typeof value.content === "string";
           })
-          .map((item: { role: "user" | "assistant"; content: string }) => ({
+          .map((item: ChatMessage) => ({
             role: item.role,
-            content: item.content.trim().slice(0, 4000),
+            content: item.content.trim().slice(0, 1200),
           }))
-          .slice(-12)
+          .slice(-8)
       : [];
 
     if (!messages.length || messages[messages.length - 1]?.role !== "user") {
       return NextResponse.json({ error: "Pertanyaan belum diisi" }, { status: 400 });
+    }
+
+    const lastQuestion = messages[messages.length - 1].content;
+    const intent = detectIntent(messages);
+
+    // Pertanyaan conversational tidak perlu DB dan tidak memakai token OpenAI.
+    if (intent === "casual") {
+      return NextResponse.json({
+        answer: casualAnswer(lastQuestion),
+        generatedAt: new Date().toISOString(),
+        mode: "local",
+        model: null,
+        intent,
+      });
     }
 
     const { start, end } = wibRange();
@@ -155,6 +257,7 @@ export async function POST(req: NextRequest) {
       yesterday,
       week,
       month,
+      todayStatuses,
       leadsToday,
       leads30d,
       totalUsers,
@@ -162,6 +265,7 @@ export async function POST(req: NextRequest) {
       pending,
       warranty,
       warranty30d,
+      expiredToday,
       expiring7d,
       expired30d,
       stock,
@@ -178,6 +282,7 @@ export async function POST(req: NextRequest) {
       prisma.transaction.aggregate({ where: { status: "success", purchaseDate: { gte: yesterdayStart, lt: start } }, _count: { _all: true }, _sum: { amount: true } }),
       prisma.transaction.aggregate({ where: { status: "success", purchaseDate: { gte: start7d, lt: end } }, _count: { _all: true }, _sum: { amount: true } }),
       prisma.transaction.aggregate({ where: { status: "success", purchaseDate: { gte: start30d, lt: end } }, _count: { _all: true }, _sum: { amount: true } }),
+      prisma.transaction.groupBy({ by: ["status"], where: { purchaseDate: { gte: start, lt: end } }, _count: { _all: true } }),
       prisma.user.count({ where: { createdAt: { gte: start, lt: end } } }),
       prisma.user.count({ where: { createdAt: { gte: start30d, lt: end } } }),
       prisma.user.count(),
@@ -185,7 +290,8 @@ export async function POST(req: NextRequest) {
       prisma.transaction.count({ where: { status: "pending" } }),
       prisma.warrantyClaim.count({ where: { status: "pending" } }),
       prisma.warrantyClaim.count({ where: { createdAt: { gte: start30d, lt: end } } }),
-      prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: start, lt: next7d } } }),
+      prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: start, lt: end } } }),
+      prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: end, lt: next7d } } }),
       prisma.transaction.count({ where: { status: "success", warrantyExpiredAt: { gte: start30d, lt: start } } }),
       prisma.stockAccount.findMany({ where: { usageType: "sale" }, select: { productType: true, usedSlots: true, maxSlots: true } }),
       prisma.transaction.groupBy({ by: ["source"], where: { status: "success", purchaseDate: { gte: start30d, lt: end } }, _count: { _all: true }, _sum: { amount: true } }),
@@ -197,6 +303,9 @@ export async function POST(req: NextRequest) {
       prisma.user.count({ where: { referredBy: { not: null }, createdAt: { gte: start30d, lt: end } } }),
       prisma.messageLog.count({ where: { status: "sent", sentAt: { gte: start30d, lt: end } } }),
     ]);
+
+    const statusToday: Record<string, number> = {};
+    for (const item of todayStatuses) statusToday[item.status || "unknown"] = item._count._all;
 
     const stockSummary: Record<string, { accounts: number; remainingSlots: number; totalSlots: number }> = {};
     for (const item of stock) {
@@ -212,132 +321,116 @@ export async function POST(req: NextRequest) {
     const context = {
       generatedAt: new Date().toISOString(),
       timezone: "Asia/Jakarta",
-      definitions: {
-        newLead: "Lead baru dihitung dari pelanggan/user yang baru dibuat.",
-        revenue: "Omzet dihitung dari transaksi berstatus success.",
-        retention: "Data expiry menunjukkan jumlah transaksi berlangganan yang masa aktifnya berakhir pada periode tersebut; ini bukan otomatis churn unik per pelanggan.",
+      transactions: {
+        successToday: today._count._all,
+        revenueToday: numeric(today._sum.amount),
+        statusBreakdownToday: statusToday,
+        successYesterday: yesterday._count._all,
+        revenueYesterday: numeric(yesterday._sum.amount),
+        success7d: week._count._all,
+        revenue7d: numeric(week._sum.amount),
+        success30d: month._count._all,
+        revenue30d: numeric(month._sum.amount),
+        pendingAll: pending,
       },
-      today: { transactions: today._count._all, revenue: numeric(today._sum.amount), newLeads: leadsToday },
-      yesterday: { transactions: yesterday._count._all, revenue: numeric(yesterday._sum.amount) },
-      last7Days: { transactions: week._count._all, revenue: numeric(week._sum.amount) },
-      last30Days: { transactions: month._count._all, revenue: numeric(month._sum.amount), newLeads: leads30d },
-      customers: {
-        total: totalUsers,
-        active: activeUsers,
-        subscriptionsExpiringNext7Days: expiring7d,
-        subscriptionsExpiredLast30Days: expired30d,
-      },
-      operations: {
-        pendingTransactions: pending,
-        pendingWarrantyClaims: warranty,
-        warrantyClaimsLast30Days: warranty30d,
-        messagesSentLast30Days: messagesSent30d,
-      },
+      leads: { today: leadsToday, last30d: leads30d, totalCustomers: totalUsers, activeCustomers: activeUsers },
+      retention: { expiredToday, expiringNext7Days: expiring7d, expiredLast30Days: expired30d },
+      operations: { pendingWarrantyClaims: warranty, warrantyClaims30d: warranty30d, messagesSent30d },
       stock: stockSummary,
-      sales: {
-        activeMembers: activeSales,
-        assistedTransactionsLast30Days: salesPerformance30d._count._all,
-        assistedRevenueLast30Days: numeric(salesPerformance30d._sum.amount),
-      },
+      sales: { activeMembers: activeSales, assistedTransactions30d: salesPerformance30d._count._all, assistedRevenue30d: numeric(salesPerformance30d._sum.amount) },
       affiliates: {
-        activeAffiliates,
-        referredLeadsLast30Days: referredLeads30d,
-        commissionEventsLast30Days: affiliatePerformance30d._count._all,
-        commissionsLast30Days: numeric(affiliatePerformance30d._sum.amount),
-        attributedRevenueLast30Days: numeric(affiliatePerformance30d._sum.transactionAmount),
+        active: activeAffiliates,
+        referredLeads30d,
+        commissionEvents30d: affiliatePerformance30d._count._all,
+        commissions30d: numeric(affiliatePerformance30d._sum.amount),
+        attributedRevenue30d: numeric(affiliatePerformance30d._sum.transactionAmount),
       },
-      sourceBreakdown30d: sources.map((item) => ({
-        source: item.source || "unknown",
-        transactions: item._count._all,
-        revenue: numeric(item._sum.amount),
-      })),
-      topProducts30d: products.map((item) => ({
-        product: item.productName || "unknown",
-        transactions: item._count._all,
-        revenue: numeric(item._sum.amount),
-      })),
+      channels30d: sources.map((item) => ({ source: item.source || "unknown", transactions: item._count._all, revenue: numeric(item._sum.amount) })),
+      topProducts30d: products.map((item) => ({ product: item.productName || "unknown", transactions: item._count._all, revenue: numeric(item._sum.amount) })),
     };
 
-    const lastQuestion = messages[messages.length - 1].content;
-
-    const buildFallbackAnswer = (question: string) => {
-      const q = question.toLowerCase();
-      const txChange = changeLabel(context.today.transactions, context.yesterday.transactions);
-      const revenueChange = changeLabel(context.today.revenue, context.yesterday.revenue);
-      const averageDailyLeads30d = context.last30Days.newLeads / 30;
-
-      if (["transaksi", "order", "orderan", "omzet", "revenue", "penjualan"].some((word) => q.includes(word))) {
-        return `Hari ini ada ${context.today.transactions} transaksi sukses dengan omzet ${formatRupiah(context.today.revenue)}. Kemarin ada ${context.yesterday.transactions} transaksi dengan omzet ${formatRupiah(context.yesterday.revenue)}. Dibanding kemarin, jumlah transaksi ${txChange} dan omzet ${revenueChange}. Dalam 7 hari terakhir tercatat ${context.last7Days.transactions} transaksi dengan omzet ${formatRupiah(context.last7Days.revenue)}.`;
+    const compactContext = (() => {
+      switch (intent) {
+        case "transactions":
+          return { transactions: context.transactions };
+        case "leads":
+          return { leads: context.leads, transactions: { successToday: context.transactions.successToday } };
+        case "retention":
+          return { retention: context.retention, leads: { activeCustomers: context.leads.activeCustomers } };
+        case "stock":
+          return { stock: context.stock };
+        case "products":
+          return { topProducts30d: context.topProducts30d };
+        case "channels":
+          return { channels30d: context.channels30d };
+        case "sales":
+          return { sales: context.sales };
+        case "affiliates":
+          return { affiliates: context.affiliates };
+        case "warranty":
+          return { operations: { pendingWarrantyClaims: context.operations.pendingWarrantyClaims, warrantyClaims30d: context.operations.warrantyClaims30d } };
+        case "strategy":
+          return {
+            transactions: context.transactions,
+            leads: context.leads,
+            retention: context.retention,
+            stock: context.stock,
+            operations: context.operations,
+            sales: context.sales,
+            affiliates: context.affiliates,
+            channels30d: context.channels30d.slice(0, 5),
+            topProducts30d: context.topProducts30d.slice(0, 5),
+          };
+        default:
+          return {
+            transactions: { successToday: context.transactions.successToday, revenueToday: context.transactions.revenueToday, pendingAll: context.transactions.pendingAll },
+            leads: { today: context.leads.today },
+            retention: { expiredToday: context.retention.expiredToday, expiringNext7Days: context.retention.expiringNext7Days },
+            stock: context.stock,
+            operations: { pendingWarrantyClaims: context.operations.pendingWarrantyClaims },
+          };
       }
+    })();
 
-      if (["lead", "pelanggan baru", "customer baru", "user baru"].some((word) => q.includes(word))) {
-        const pace = context.today.newLeads >= averageDailyLeads30d ? "di atas atau setara" : "di bawah";
-        return `Lead/pelanggan baru hari ini: ${context.today.newLeads}. Dalam 30 hari terakhir ada ${context.last30Days.newLeads} lead baru, rata-rata ${averageDailyLeads30d.toFixed(1)} per hari. Pace hari ini ${pace} rata-rata 30 hari. Total pelanggan sekarang ${context.customers.total}, dengan ${context.customers.active} berstatus aktif.`;
+    const txChange = changeLabel(context.transactions.successToday, context.transactions.successYesterday);
+    const revenueChange = changeLabel(context.transactions.revenueToday, context.transactions.revenueYesterday);
+
+    const buildFallbackAnswer = () => {
+      switch (intent) {
+        case "transactions":
+          return `Hari ini ada ${context.transactions.successToday} transaksi sukses dengan omzet ${formatRupiah(context.transactions.revenueToday)}. Kemarin ada ${context.transactions.successYesterday} transaksi sukses dengan omzet ${formatRupiah(context.transactions.revenueYesterday)}. Transaksi ${txChange}; omzet ${revenueChange}.`;
+        case "leads":
+          return `Lead baru hari ini ${context.leads.today}. Dalam 30 hari terakhir ada ${context.leads.last30d} lead baru. Total pelanggan ${context.leads.totalCustomers}, dengan ${context.leads.activeCustomers} aktif.`;
+        case "retention":
+          return `Hari ini ada ${context.retention.expiredToday} langganan/transaksi berlangganan yang masa aktifnya berakhir. Dalam 7 hari ke depan ada ${context.retention.expiringNext7Days} yang akan berakhir, dan dalam 30 hari terakhir ada ${context.retention.expiredLast30Days} yang sudah berakhir.`;
+        case "stock": {
+          const rows = Object.entries(context.stock).map(([type, item]) => `${type === "mobile" ? "HP" : type === "desktop" ? "PC" : type}: ${item.remainingSlots}/${item.totalSlots} slot tersisa`);
+          return rows.length ? `Stok jual saat ini:\n- ${rows.join("\n- ")}` : "Belum ada stok jual yang terbaca dari database.";
+        }
+        case "products":
+          return context.topProducts30d.length ? `Produk teratas 30 hari:\n${context.topProducts30d.slice(0, 5).map((item, i) => `${i + 1}. ${item.product}: ${item.transactions} transaksi, ${formatRupiah(item.revenue)}`).join("\n")}` : "Belum ada data produk sukses dalam 30 hari terakhir.";
+        case "channels":
+          return context.channels30d.length ? `Channel 30 hari:\n${[...context.channels30d].sort((a, b) => b.revenue - a.revenue).slice(0, 5).map((item, i) => `${i + 1}. ${item.source}: ${item.transactions} transaksi, ${formatRupiah(item.revenue)}`).join("\n")}` : "Belum ada data channel 30 hari terakhir.";
+        case "sales":
+          return `Sales aktif ${context.sales.activeMembers}. Dalam 30 hari, ${context.sales.assistedTransactions30d} transaksi teratribusi ke sales dengan omzet ${formatRupiah(context.sales.assistedRevenue30d)}.`;
+        case "affiliates":
+          return `Affiliate aktif ${context.affiliates.active}. Dalam 30 hari ada ${context.affiliates.referredLeads30d} lead referral, attributed revenue ${formatRupiah(context.affiliates.attributedRevenue30d)}, dan komisi ${formatRupiah(context.affiliates.commissions30d)}.`;
+        case "warranty":
+          return `Ada ${context.operations.pendingWarrantyClaims} klaim garansi pending. Dalam 30 hari terakhir tercatat ${context.operations.warrantyClaims30d} klaim.`;
+        case "strategy":
+          return `Snapshot: hari ini ${context.transactions.successToday} transaksi sukses, omzet ${formatRupiah(context.transactions.revenueToday)}, ${context.leads.today} lead baru, ${context.retention.expiredToday} expired hari ini, ${context.operations.pendingWarrantyClaims} klaim garansi pending. Prioritaskan anomali terbesar pada transaksi, stok, dan retention.`;
+        default:
+          return `Hari ini: ${context.transactions.successToday} transaksi sukses, omzet ${formatRupiah(context.transactions.revenueToday)}, ${context.leads.today} lead baru, ${context.retention.expiredToday} expired, dan ${context.operations.pendingWarrantyClaims} klaim garansi pending.`;
       }
-
-      if (["stok", "restok", "stock"].some((word) => q.includes(word))) {
-        const entries = Object.entries(context.stock);
-        if (!entries.length) return "Belum ada stok jual yang terbaca dari database.";
-        const lines = entries.map(([type, item]) => {
-          const label = type === "mobile" ? "HP" : type === "desktop" ? "PC" : type;
-          return `${label}: ${item.remainingSlots} slot tersisa dari ${item.totalSlots} slot`;
-        });
-        const mobileLow = (context.stock.mobile?.remainingSlots ?? Number.POSITIVE_INFINITY) <= 2;
-        const desktopLow = (context.stock.desktop?.remainingSlots ?? Number.POSITIVE_INFINITY) <= 1;
-        const alerts = [mobileLow ? "HP sudah masuk batas restok" : "", desktopLow ? "PC sudah masuk batas restok" : ""].filter(Boolean);
-        return `Kondisi stok jual saat ini:\n- ${lines.join("\n- ")}${alerts.length ? `\n\nPerhatian: ${alerts.join(" dan ")}.` : "\n\nBelum ada stok yang menyentuh batas restok utama."}`;
-      }
-
-      if (["produk", "terlaris", "best seller", "bestseller"].some((word) => q.includes(word))) {
-        if (!context.topProducts30d.length) return "Belum ada data produk sukses dalam 30 hari terakhir.";
-        const rows = context.topProducts30d.slice(0, 5).map((item, index) => `${index + 1}. ${item.product}: ${item.transactions} transaksi, ${formatRupiah(item.revenue)}`);
-        return `Produk teratas 30 hari terakhir:\n${rows.join("\n")}`;
-      }
-
-      if (["sumber", "channel", "kanal", "source"].some((word) => q.includes(word))) {
-        if (!context.sourceBreakdown30d.length) return "Belum ada data sumber transaksi sukses dalam 30 hari terakhir.";
-        const ranked = [...context.sourceBreakdown30d].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
-        return `Sumber penjualan 30 hari terakhir berdasarkan omzet:\n${ranked.map((item, index) => `${index + 1}. ${item.source}: ${item.transactions} transaksi, ${formatRupiah(item.revenue)}`).join("\n")}`;
-      }
-
-      if (["sales", "closing", "closer"].some((word) => q.includes(word))) {
-        return `Tim sales aktif: ${context.sales.activeMembers}. Dalam 30 hari terakhir, transaksi yang teratribusi ke sales sebanyak ${context.sales.assistedTransactionsLast30Days} dengan omzet ${formatRupiah(context.sales.assistedRevenueLast30Days)}.`;
-      }
-
-      if (["affiliate", "afiliasi", "referral", "komisi"].some((word) => q.includes(word))) {
-        return `Affiliate aktif: ${context.affiliates.activeAffiliates}. Dalam 30 hari terakhir ada ${context.affiliates.referredLeadsLast30Days} lead referral, ${context.affiliates.commissionEventsLast30Days} event komisi, attributed revenue ${formatRupiah(context.affiliates.attributedRevenueLast30Days)}, dan total komisi ${formatRupiah(context.affiliates.commissionsLast30Days)}.`;
-      }
-
-      if (["warranty", "garansi", "klaim"].some((word) => q.includes(word))) {
-        return `Saat ini ada ${context.operations.pendingWarrantyClaims} klaim garansi pending. Dalam 30 hari terakhir tercatat ${context.operations.warrantyClaimsLast30Days} klaim garansi. Fokus operasional: selesaikan klaim pending lebih dulu agar SLA dan kepuasan pelanggan terjaga.`;
-      }
-
-      if (["retention", "retensi", "expired", "renewal", "perpanjang", "churn"].some((word) => q.includes(word))) {
-        return `Ada ${context.customers.subscriptionsExpiringNext7Days} langganan yang akan berakhir dalam 7 hari ke depan dan ${context.customers.subscriptionsExpiredLast30Days} transaksi berlangganan yang berakhir dalam 30 hari terakhir. Prioritas: follow-up pelanggan yang akan expired sebelum masa aktif habis, lalu ukur berapa yang berhasil renewal.`;
-      }
-
-      if (["analisis", "keputusan", "saran", "rekomendasi", "prioritas", "strategi"].some((word) => q.includes(word))) {
-        const priorities: string[] = [];
-        if ((context.stock.mobile?.remainingSlots ?? 999) <= 2) priorities.push(`Restok HP segera karena tinggal ${context.stock.mobile.remainingSlots} slot.`);
-        if ((context.stock.desktop?.remainingSlots ?? 999) <= 1) priorities.push(`Restok PC segera karena tinggal ${context.stock.desktop.remainingSlots} slot.`);
-        if (context.today.transactions < context.yesterday.transactions) priorities.push(`Transaksi hari ini lebih rendah dari kemarin (${context.today.transactions} vs ${context.yesterday.transactions}); cek channel dan follow-up lead hari ini.`);
-        if (context.customers.subscriptionsExpiringNext7Days > 0) priorities.push(`Follow-up ${context.customers.subscriptionsExpiringNext7Days} langganan yang akan expired dalam 7 hari untuk mendorong renewal.`);
-        if (context.operations.pendingTransactions > 0) priorities.push(`Selesaikan ${context.operations.pendingTransactions} transaksi pending agar tidak menjadi revenue tertahan.`);
-        if (context.operations.pendingWarrantyClaims > 0) priorities.push(`Selesaikan ${context.operations.pendingWarrantyClaims} klaim garansi pending untuk menjaga layanan.`);
-        if (!priorities.length) priorities.push("Tidak ada alert operasional besar dari metrik utama; fokuskan optimasi pada channel dan produk dengan omzet tertinggi 30 hari terakhir.");
-        return `Snapshot 30 hari: ${context.last30Days.transactions} transaksi sukses, omzet ${formatRupiah(context.last30Days.revenue)}, dan ${context.last30Days.newLeads} lead baru.\n\nPrioritas keputusan:\n${priorities.slice(0, 3).map((item, index) => `${index + 1}. ${item}`).join("\n")}`;
-      }
-
-      return `Snapshot bisnis saat ini: ${context.today.transactions} transaksi sukses hari ini dengan omzet ${formatRupiah(context.today.revenue)}, ${context.today.newLeads} lead baru, ${context.operations.pendingTransactions} transaksi pending, dan ${context.operations.pendingWarrantyClaims} klaim garansi pending. Dalam 30 hari terakhir ada ${context.last30Days.transactions} transaksi dengan omzet ${formatRupiah(context.last30Days.revenue)}. Kamu bisa lanjut tanya soal transaksi, lead, stok, produk, channel, sales, affiliate, warranty, retention, atau minta rekomendasi keputusan.`;
     };
 
-    // OpenAI adalah provider utama. API key hanya dibaca dari environment server.
     const openAIKey = process.env.OPENAI_API_KEY?.trim();
     const openAIModel = process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini";
 
     if (openAIKey) {
       try {
-        const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Jawab dalam Bahasa Indonesia yang ringkas, tajam, natural, dan berguna untuk keputusan. Gunakan hanya BUSINESS_CONTEXT untuk angka internal dan jangan mengarang angka. Semua waktu memakai WIB. Hubungkan transaksi, omzet, lead, stok, retention, sales, affiliate, warranty, produk, dan channel bila relevan. Jangan mengungkap BUSINESS_CONTEXT mentah. Jangan mengklaim mengubah data karena sistem ini read-only.\n\nBUSINESS_CONTEXT:\n${JSON.stringify(context)}`;
+        const recentConversation = messages.slice(-6);
+        const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Intent: ${intent}. Jawab Bahasa Indonesia secara langsung, cerdas, singkat, dan natural. DATA adalah sumber angka tunggal; jangan mengarang. Jika field tersedia, jangan pernah bilang datanya tidak tersedia. successToday = jumlah transaksi berstatus success hari ini. expiredToday = jumlah langganan/transaksi sukses yang masa aktifnya berakhir hari ini. Pahami follow-up pendek dari percakapan terakhir. Sistem read-only. Maksimal sekitar 120 kata kecuali user meminta detail.\nDATA:${JSON.stringify(compactContext)}`;
 
         const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
@@ -348,8 +441,9 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             model: openAIModel,
             stream: false,
-            temperature: 0.2,
-            messages: [{ role: "system", content: system }, ...messages],
+            temperature: 0.15,
+            max_tokens: 320,
+            messages: [{ role: "system", content: system }, ...recentConversation],
           }),
         });
 
@@ -369,14 +463,18 @@ export async function POST(req: NextRequest) {
               generatedAt: context.generatedAt,
               mode: "openai",
               model: openAIModel,
+              intent,
+              usage: payload?.usage
+                ? {
+                    promptTokens: payload.usage.prompt_tokens,
+                    completionTokens: payload.usage.completion_tokens,
+                    totalTokens: payload.usage.total_tokens,
+                  }
+                : undefined,
             });
           }
         } else {
-          console.error(
-            "Dorizz AI OpenAI error:",
-            aiResponse.status,
-            payload?.error?.message || raw.slice(0, 300),
-          );
+          console.error("Dorizz AI OpenAI error:", aiResponse.status, payload?.error?.message || raw.slice(0, 300));
         }
       } catch (providerError) {
         console.error("Dorizz AI OpenAI fallback activated:", providerError);
@@ -384,10 +482,11 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      answer: buildFallbackAnswer(lastQuestion),
+      answer: buildFallbackAnswer(),
       generatedAt: context.generatedAt,
       mode: "business-engine",
       model: openAIKey ? openAIModel : null,
+      intent,
     });
   } catch (error) {
     console.error("POST /api/stats AI error:", error);
