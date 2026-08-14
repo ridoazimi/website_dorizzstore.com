@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requirePermission } from "@/lib/auth";
-import { generateText } from "ai";
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -24,6 +23,24 @@ function wibRange() {
 function numeric(value: unknown) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? number : 0;
+}
+
+function formatRupiah(value: number) {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function changeLabel(current: number, previous: number) {
+  if (previous === 0) {
+    if (current === 0) return "tetap 0";
+    return `naik dari 0 menjadi ${current}`;
+  }
+  const percent = ((current - previous) / previous) * 100;
+  const direction = percent >= 0 ? "naik" : "turun";
+  return `${direction} ${Math.abs(percent).toFixed(1)}%`;
 }
 
 // GET /api/stats - Statistik untuk halaman Dashboard Overview
@@ -241,27 +258,120 @@ export async function POST(req: NextRequest) {
       })),
     };
 
-    const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Jawab dalam Bahasa Indonesia yang ringkas, tajam, dan berguna untuk keputusan. Gunakan hanya BUSINESS_CONTEXT untuk angka internal. Jangan mengarang angka. Semua waktu memakai WIB. Jika user menyebut lead baru, gunakan definisi newLead. Untuk rekomendasi, hubungkan transaksi, omzet, lead, stok, retention, sales, affiliate, warranty, dan channel bila relevan. Sistem ini read-only dan tidak boleh mengklaim mengubah data.\n\nBUSINESS_CONTEXT:\n${JSON.stringify(context)}`;
+    const lastQuestion = messages[messages.length - 1].content;
 
-    const conversation = messages
-      .map((message: { role: "user" | "assistant"; content: string }) =>
-        `${message.role === "user" ? "USER" : "ASSISTANT"}: ${message.content}`
-      )
-      .join("\n\n");
+    const buildFallbackAnswer = (question: string) => {
+      const q = question.toLowerCase();
+      const txChange = changeLabel(context.today.transactions, context.yesterday.transactions);
+      const revenueChange = changeLabel(context.today.revenue, context.yesterday.revenue);
+      const averageDailyLeads30d = context.last30Days.newLeads / 30;
 
-    const { text } = await generateText({
-      model: "openai/gpt-5.6-terra",
-      system,
-      prompt: `Berikut percakapan terbaru. Jawab pesan USER terakhir dengan mempertimbangkan konteks percakapan sebelumnya.\n\n${conversation}`,
-    });
+      if (["transaksi", "order", "orderan", "omzet", "revenue", "penjualan"].some((word) => q.includes(word))) {
+        return `Hari ini ada ${context.today.transactions} transaksi sukses dengan omzet ${formatRupiah(context.today.revenue)}. Kemarin ada ${context.yesterday.transactions} transaksi dengan omzet ${formatRupiah(context.yesterday.revenue)}. Dibanding kemarin, jumlah transaksi ${txChange} dan omzet ${revenueChange}. Dalam 7 hari terakhir tercatat ${context.last7Days.transactions} transaksi dengan omzet ${formatRupiah(context.last7Days.revenue)}.`;
+      }
 
-    if (!text?.trim()) {
-      return NextResponse.json({ error: "AI tidak mengembalikan jawaban" }, { status: 502 });
+      if (["lead", "pelanggan baru", "customer baru", "user baru"].some((word) => q.includes(word))) {
+        const pace = context.today.newLeads >= averageDailyLeads30d ? "di atas atau setara" : "di bawah";
+        return `Lead/pelanggan baru hari ini: ${context.today.newLeads}. Dalam 30 hari terakhir ada ${context.last30Days.newLeads} lead baru, rata-rata ${averageDailyLeads30d.toFixed(1)} per hari. Pace hari ini ${pace} rata-rata 30 hari. Total pelanggan sekarang ${context.customers.total}, dengan ${context.customers.active} berstatus aktif.`;
+      }
+
+      if (["stok", "restok", "stock"].some((word) => q.includes(word))) {
+        const entries = Object.entries(context.stock);
+        if (!entries.length) return "Belum ada stok jual yang terbaca dari database.";
+        const lines = entries.map(([type, item]) => {
+          const label = type === "mobile" ? "HP" : type === "desktop" ? "PC" : type;
+          return `${label}: ${item.remainingSlots} slot tersisa dari ${item.totalSlots} slot`;
+        });
+        const mobileLow = (context.stock.mobile?.remainingSlots ?? Number.POSITIVE_INFINITY) <= 2;
+        const desktopLow = (context.stock.desktop?.remainingSlots ?? Number.POSITIVE_INFINITY) <= 1;
+        const alerts = [mobileLow ? "HP sudah masuk batas restok" : "", desktopLow ? "PC sudah masuk batas restok" : ""].filter(Boolean);
+        return `Kondisi stok jual saat ini:\n- ${lines.join("\n- ")}${alerts.length ? `\n\nPerhatian: ${alerts.join(" dan ")}.` : "\n\nBelum ada stok yang menyentuh batas restok utama."}`;
+      }
+
+      if (["produk", "terlaris", "best seller", "bestseller"].some((word) => q.includes(word))) {
+        if (!context.topProducts30d.length) return "Belum ada data produk sukses dalam 30 hari terakhir.";
+        const rows = context.topProducts30d.slice(0, 5).map((item, index) => `${index + 1}. ${item.product}: ${item.transactions} transaksi, ${formatRupiah(item.revenue)}`);
+        return `Produk teratas 30 hari terakhir:\n${rows.join("\n")}`;
+      }
+
+      if (["sumber", "channel", "kanal", "source"].some((word) => q.includes(word))) {
+        if (!context.sourceBreakdown30d.length) return "Belum ada data sumber transaksi sukses dalam 30 hari terakhir.";
+        const ranked = [...context.sourceBreakdown30d].sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+        return `Sumber penjualan 30 hari terakhir berdasarkan omzet:\n${ranked.map((item, index) => `${index + 1}. ${item.source}: ${item.transactions} transaksi, ${formatRupiah(item.revenue)}`).join("\n")}`;
+      }
+
+      if (["sales", "closing", "closer"].some((word) => q.includes(word))) {
+        return `Tim sales aktif: ${context.sales.activeMembers}. Dalam 30 hari terakhir, transaksi yang teratribusi ke sales sebanyak ${context.sales.assistedTransactionsLast30Days} dengan omzet ${formatRupiah(context.sales.assistedRevenueLast30Days)}.`;
+      }
+
+      if (["affiliate", "afiliasi", "referral", "komisi"].some((word) => q.includes(word))) {
+        return `Affiliate aktif: ${context.affiliates.activeAffiliates}. Dalam 30 hari terakhir ada ${context.affiliates.referredLeadsLast30Days} lead referral, ${context.affiliates.commissionEventsLast30Days} event komisi, attributed revenue ${formatRupiah(context.affiliates.attributedRevenueLast30Days)}, dan total komisi ${formatRupiah(context.affiliates.commissionsLast30Days)}.`;
+      }
+
+      if (["warranty", "garansi", "klaim"].some((word) => q.includes(word))) {
+        return `Saat ini ada ${context.operations.pendingWarrantyClaims} klaim garansi pending. Dalam 30 hari terakhir tercatat ${context.operations.warrantyClaimsLast30Days} klaim garansi. Fokus operasional: selesaikan klaim pending lebih dulu agar SLA dan kepuasan pelanggan terjaga.`;
+      }
+
+      if (["retention", "retensi", "expired", "renewal", "perpanjang", "churn"].some((word) => q.includes(word))) {
+        return `Ada ${context.customers.subscriptionsExpiringNext7Days} langganan yang akan berakhir dalam 7 hari ke depan dan ${context.customers.subscriptionsExpiredLast30Days} transaksi berlangganan yang berakhir dalam 30 hari terakhir. Prioritas: follow-up pelanggan yang akan expired sebelum masa aktif habis, lalu ukur berapa yang berhasil renewal.`;
+      }
+
+      if (["analisis", "keputusan", "saran", "rekomendasi", "prioritas", "strategi"].some((word) => q.includes(word))) {
+        const priorities: string[] = [];
+        if ((context.stock.mobile?.remainingSlots ?? 999) <= 2) priorities.push(`Restok HP segera karena tinggal ${context.stock.mobile.remainingSlots} slot.`);
+        if ((context.stock.desktop?.remainingSlots ?? 999) <= 1) priorities.push(`Restok PC segera karena tinggal ${context.stock.desktop.remainingSlots} slot.`);
+        if (context.today.transactions < context.yesterday.transactions) priorities.push(`Transaksi hari ini lebih rendah dari kemarin (${context.today.transactions} vs ${context.yesterday.transactions}); cek channel dan follow-up lead hari ini.`);
+        if (context.customers.subscriptionsExpiringNext7Days > 0) priorities.push(`Follow-up ${context.customers.subscriptionsExpiringNext7Days} langganan yang akan expired dalam 7 hari untuk mendorong renewal.`);
+        if (context.operations.pendingTransactions > 0) priorities.push(`Selesaikan ${context.operations.pendingTransactions} transaksi pending agar tidak menjadi revenue tertahan.`);
+        if (context.operations.pendingWarrantyClaims > 0) priorities.push(`Selesaikan ${context.operations.pendingWarrantyClaims} klaim garansi pending untuk menjaga layanan.`);
+        if (!priorities.length) priorities.push("Tidak ada alert operasional besar dari metrik utama; fokuskan optimasi pada channel dan produk dengan omzet tertinggi 30 hari terakhir.");
+        return `Snapshot 30 hari: ${context.last30Days.transactions} transaksi sukses, omzet ${formatRupiah(context.last30Days.revenue)}, dan ${context.last30Days.newLeads} lead baru.\n\nPrioritas keputusan:\n${priorities.slice(0, 3).map((item, index) => `${index + 1}. ${item}`).join("\n")}`;
+      }
+
+      return `Snapshot bisnis saat ini: ${context.today.transactions} transaksi sukses hari ini dengan omzet ${formatRupiah(context.today.revenue)}, ${context.today.newLeads} lead baru, ${context.operations.pendingTransactions} transaksi pending, dan ${context.operations.pendingWarrantyClaims} klaim garansi pending. Dalam 30 hari terakhir ada ${context.last30Days.transactions} transaksi dengan omzet ${formatRupiah(context.last30Days.revenue)}. Kamu bisa lanjut tanya soal transaksi, lead, stok, produk, channel, sales, affiliate, warranty, retention, atau minta rekomendasi keputusan.`;
+    };
+
+    // Provider LLM bersifat opsional. Copilot tetap berfungsi dari data live apabila
+    // AI Gateway belum dikonfigurasi atau provider sedang bermasalah.
+    const gatewayKey = process.env.AI_GATEWAY_API_KEY?.trim();
+    if (gatewayKey) {
+      try {
+        const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Jawab dalam Bahasa Indonesia yang ringkas, tajam, dan berguna untuk keputusan. Gunakan hanya BUSINESS_CONTEXT untuk angka internal. Jangan mengarang angka. Semua waktu memakai WIB. Sistem read-only.\n\nBUSINESS_CONTEXT:\n${JSON.stringify(context)}`;
+        const aiResponse = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${gatewayKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "openai/gpt-5.6-terra",
+            stream: false,
+            messages: [{ role: "system", content: system }, ...messages],
+          }),
+        });
+
+        const raw = await aiResponse.text();
+        if (aiResponse.ok && raw.trim().startsWith("{")) {
+          const payload = JSON.parse(raw);
+          const answer = payload?.choices?.[0]?.message?.content;
+          if (typeof answer === "string" && answer.trim()) {
+            return NextResponse.json({ answer: answer.trim(), generatedAt: context.generatedAt, mode: "llm" });
+          }
+        } else {
+          console.error("Dorizz AI gateway non-JSON/error response:", aiResponse.status, raw.slice(0, 300));
+        }
+      } catch (providerError) {
+        console.error("Dorizz AI provider fallback activated:", providerError);
+      }
     }
 
-    return NextResponse.json({ answer: text.trim(), generatedAt: context.generatedAt });
+    return NextResponse.json({
+      answer: buildFallbackAnswer(lastQuestion),
+      generatedAt: context.generatedAt,
+      mode: "business-engine",
+    });
   } catch (error) {
     console.error("POST /api/stats AI error:", error);
-    return NextResponse.json({ error: "AI sedang tidak dapat merespons. Silakan coba lagi sebentar." }, { status: 502 });
+    return NextResponse.json({ error: "Gagal membaca data bisnis untuk Dorizz AI." }, { status: 500 });
   }
 }
