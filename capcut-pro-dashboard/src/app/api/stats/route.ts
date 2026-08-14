@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, requirePermission } from "@/lib/auth";
+import { generateText } from "ai";
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -115,7 +116,10 @@ export async function POST(req: NextRequest) {
             const value = item as Record<string, unknown>;
             return (value.role === "user" || value.role === "assistant") && typeof value.content === "string";
           })
-          .map((item: { role: "user" | "assistant"; content: string }) => ({ role: item.role, content: item.content.trim().slice(0, 4000) }))
+          .map((item: { role: "user" | "assistant"; content: string }) => ({
+            role: item.role,
+            content: item.content.trim().slice(0, 4000),
+          }))
           .slice(-12)
       : [];
 
@@ -225,46 +229,39 @@ export async function POST(req: NextRequest) {
         commissionsLast30Days: numeric(affiliatePerformance30d._sum.amount),
         attributedRevenueLast30Days: numeric(affiliatePerformance30d._sum.transactionAmount),
       },
-      sourceBreakdown30d: sources.map((item) => ({ source: item.source || "unknown", transactions: item._count._all, revenue: numeric(item._sum.amount) })),
-      topProducts30d: products.map((item) => ({ product: item.productName || "unknown", transactions: item._count._all, revenue: numeric(item._sum.amount) })),
+      sourceBreakdown30d: sources.map((item) => ({
+        source: item.source || "unknown",
+        transactions: item._count._all,
+        revenue: numeric(item._sum.amount),
+      })),
+      topProducts30d: products.map((item) => ({
+        product: item.productName || "unknown",
+        transactions: item._count._all,
+        revenue: numeric(item._sum.amount),
+      })),
     };
-
-    // Vercel exposes OIDC as VERCEL_OIDC_TOKEN for Functions. AI_GATEWAY_API_KEY
-    // remains a supported explicit fallback for local/non-OIDC environments.
-    const gatewayToken = (process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || "").trim();
-    if (!gatewayToken) {
-      return NextResponse.json({ error: "Autentikasi AI Gateway belum tersedia di deployment ini" }, { status: 503 });
-    }
 
     const system = `Kamu adalah Dorizz AI, copilot bisnis internal Dorizz Store. Jawab dalam Bahasa Indonesia yang ringkas, tajam, dan berguna untuk keputusan. Gunakan hanya BUSINESS_CONTEXT untuk angka internal. Jangan mengarang angka. Semua waktu memakai WIB. Jika user menyebut lead baru, gunakan definisi newLead. Untuk rekomendasi, hubungkan transaksi, omzet, lead, stok, retention, sales, affiliate, warranty, dan channel bila relevan. Sistem ini read-only dan tidak boleh mengklaim mengubah data.\n\nBUSINESS_CONTEXT:\n${JSON.stringify(context)}`;
 
-    const aiResponse = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${gatewayToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-5.4-mini",
-        stream: false,
-        messages: [{ role: "system", content: system }, ...messages],
-      }),
+    const conversation = messages
+      .map((message: { role: "user" | "assistant"; content: string }) =>
+        `${message.role === "user" ? "USER" : "ASSISTANT"}: ${message.content}`
+      )
+      .join("\n\n");
+
+    const { text } = await generateText({
+      model: "openai/gpt-5.6-terra",
+      system,
+      prompt: `Berikut percakapan terbaru. Jawab pesan USER terakhir dengan mempertimbangkan konteks percakapan sebelumnya.\n\n${conversation}`,
     });
 
-    const payload = await aiResponse.json().catch(() => null);
-    if (!aiResponse.ok) {
-      console.error("Dorizz AI gateway error:", aiResponse.status, payload);
-      return NextResponse.json({ error: "AI sedang tidak dapat merespons" }, { status: 502 });
-    }
-
-    const answer = payload?.choices?.[0]?.message?.content;
-    if (typeof answer !== "string" || !answer.trim()) {
+    if (!text?.trim()) {
       return NextResponse.json({ error: "AI tidak mengembalikan jawaban" }, { status: 502 });
     }
 
-    return NextResponse.json({ answer: answer.trim(), generatedAt: context.generatedAt });
+    return NextResponse.json({ answer: text.trim(), generatedAt: context.generatedAt });
   } catch (error) {
     console.error("POST /api/stats AI error:", error);
-    return NextResponse.json({ error: "Gagal memproses pertanyaan AI" }, { status: 500 });
+    return NextResponse.json({ error: "AI sedang tidak dapat merespons. Silakan coba lagi sebentar." }, { status: 502 });
   }
 }
