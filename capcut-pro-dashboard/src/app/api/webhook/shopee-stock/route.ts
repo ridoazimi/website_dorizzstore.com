@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { calcWarrantyExpiry } from "@/lib/duration";
 import { NextRequest, NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 type LockedStock = {
   id: string;
   account_email: string;
@@ -96,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     const result = await prisma.$transaction(async (tx) => {
       // Serialize duplicate callbacks for the same Shopee order.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${reference}))`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${reference}))`;
 
       const existing = await tx.transaction.findUnique({
         where: { lynkIdRef: reference },
@@ -195,12 +197,8 @@ export async function POST(req: NextRequest) {
     });
 
     const account = result.account;
-    const usedSlots = "usedSlots" in account
-      ? account.usedSlots
-      : account.usedSlots ?? 0;
-    const maxSlots = "maxSlots" in account
-      ? account.maxSlots
-      : account.maxSlots ?? product.maxSlots ?? 3;
+    const usedSlots = account.usedSlots ?? 0;
+    const maxSlots = account.maxSlots ?? product.maxSlots ?? 3;
 
     return NextResponse.json({
       success: true,
@@ -209,8 +207,8 @@ export async function POST(req: NextRequest) {
       orderId: cleanOrderId,
       product: product.name,
       account: {
-        email: "accountEmail" in account ? account.accountEmail : account.accountEmail,
-        password: "accountPassword" in account ? account.accountPassword : account.accountPassword,
+        email: account.accountEmail,
+        password: account.accountPassword,
       },
       slots: {
         used: usedSlots,
