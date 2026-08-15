@@ -46,19 +46,23 @@ function wibDayNumber(value: Date) {
   );
 }
 
+export function getElapsedStockDays(
+  createdAt: Date | string | null,
+  now = new Date(),
+) {
+  if (!createdAt) return 0;
+  const created = createdAt instanceof Date ? createdAt : new Date(createdAt);
+  if (Number.isNaN(created.getTime())) return 0;
+  return Math.max(0, wibDayNumber(now) - wibDayNumber(created));
+}
+
 export function getRemainingStockDays(
   durationDays: number | null,
   createdAt: Date | string | null,
   now = new Date(),
 ) {
   const initialDuration = Math.max(1, durationDays ?? 30);
-  if (!createdAt) return initialDuration;
-
-  const created = createdAt instanceof Date ? createdAt : new Date(createdAt);
-  if (Number.isNaN(created.getTime())) return initialDuration;
-
-  const elapsedCalendarDays = Math.max(0, wibDayNumber(now) - wibDayNumber(created));
-  return Math.max(1, initialDuration - elapsedCalendarDays);
+  return Math.max(1, initialDuration - getElapsedStockDays(createdAt, now));
 }
 
 export async function syncProductDurationsFromAvailableStock(productIds?: string[]) {
