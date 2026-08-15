@@ -11,6 +11,7 @@ model User {
   email                String                @unique @db.VarChar(255)
   name                 String                @db.VarChar(255)
   whatsapp             String?               @db.VarChar(50)
+  city                 String?               @db.VarChar(100)
   customerType         String?               @default("new") @map("customer_type") @db.VarChar(50)
   notes                String?
   createdAt            DateTime?             @default(now()) @map("created_at") @db.Timestamptz(6)

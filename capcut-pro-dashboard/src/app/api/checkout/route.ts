@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const { productId, name, email, whatsapp, affiliateCode, voucherCode, salesCode } = await req.json();
+    const { productId, name, email, whatsapp, city, affiliateCode, voucherCode, salesCode } = await req.json();
 
-    if (!productId || !name || !email || !whatsapp) {
+    if (!productId || !name || !email || !whatsapp || !city?.trim()) {
       return NextResponse.json({ error: "Mohon lengkapi semua data" }, { status: 400 });
     }
 
@@ -52,6 +52,7 @@ export async function POST(req: Request) {
         data: {
           name,
           whatsapp,
+          city: city.trim(),
           ...(affiliateId && !user.referredBy ? { referredBy: affiliateId } : {})
         }
       });
@@ -61,6 +62,7 @@ export async function POST(req: Request) {
           email,
           name,
           whatsapp,
+          city: city.trim(),
           customerType: "new",
           referredBy: affiliateId
         }
