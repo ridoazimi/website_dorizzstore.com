@@ -7,6 +7,7 @@ import { requirePermission } from "@/lib/auth";
 import { uploadImage } from "@/lib/upload";
 import {
   applyDurationToProductFields,
+  getElapsedStockDays,
   syncProductDurationsFromAvailableStock,
 } from "@/lib/product-duration";
 
@@ -202,6 +203,11 @@ export async function updateProduct(id: string, formData: FormData) {
       }
     }
 
+    const previousProduct = await prisma.product.findUnique({
+      where: { id },
+      select: { duration: true },
+    });
+
     const syncedFields = applyDurationToProductFields(
       { name, slug, category, description, rules, messageTemplate },
       duration,
@@ -225,6 +231,31 @@ export async function updateProduct(id: string, formData: FormData) {
         messageTemplate: syncedFields.messageTemplate,
       },
     });
+    if (previousProduct?.duration !== duration) {
+      const availableStocks = await prisma.stockAccount.findMany({
+        where: {
+          productId: id,
+          status: "available",
+        },
+        select: { id: true, createdAt: true },
+      });
+
+      if (availableStocks.length > 0) {
+        await prisma.$transaction(
+          availableStocks.map((stock) =>
+            prisma.stockAccount.update({
+              where: { id: stock.id },
+              data: {
+                // Keep createdAt intact while making the effective remaining
+                // duration equal to the admin's selected value today.
+                durationDays: duration + getElapsedStockDays(stock.createdAt),
+              },
+            }),
+          ),
+        );
+      }
+    }
+
     revalidatePath("/dashboard/products");
     revalidatePath("/");
     return product;
