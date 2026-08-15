@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
+import {
+  getRemainingStockDays,
+  syncProductDurationsFromAvailableStock,
+} from "@/lib/product-duration";
 
 // GET /api/stock - Ambil semua stok akun dengan filter
 export async function GET(req: NextRequest) {
@@ -163,8 +167,13 @@ export async function GET(req: NextRequest) {
       .filter(acc => effectiveStatus(acc, 3) === "available")
       .reduce((sum, acc) => sum + Math.max(0, (acc.maxSlots ?? 3) - (acc.usedSlots ?? 0)), 0);
 
+    const accountsWithRemainingDuration = accounts.map((account) => ({
+      ...account,
+      durationDays: getRemainingStockDays(account.durationDays, account.createdAt),
+    }));
+
     return NextResponse.json({
-      accounts, total, page, limit,
+      accounts: accountsWithRemainingDuration, total, page, limit,
       statusCounts,
       mobileStatusCounts, mobileTotal: mobileAccounts.length,
       desktopStatusCounts, desktopTotal: desktopAccounts.length,
@@ -224,6 +233,10 @@ export async function POST(req: NextRequest) {
     const result = await prisma.stockAccount.createMany({
       data: data as any
     });
+
+    if (productId) {
+      await syncProductDurationsFromAvailableStock([productId]);
+    }
 
     return NextResponse.json({ created: result.count }, { status: 201 });
   } catch (error: any) {
