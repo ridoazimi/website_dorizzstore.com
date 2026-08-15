@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { parseDuration, calcWarrantyExpiry } from "@/lib/duration";
 import { parseProductType } from "@/lib/product";
+import { notifyRestockIfNeeded } from "@/lib/restock-alert";
 
 /**
  * Webhook baru untuk memproses pembayaran lunas
@@ -166,6 +167,12 @@ export async function POST(req: NextRequest) {
     });
 
     const { account } = txResult;
+
+    if (account) {
+      await notifyRestockIfNeeded(account.productType).catch((error) => {
+        console.error("[Webhook Payment Success] restock alert error:", error);
+      });
+    }
 
     // Jika stok kosong, buat log peringatan tapi tetap lanjut proses
     if (!account) {

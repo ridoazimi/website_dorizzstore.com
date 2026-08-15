@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { parseDuration, calcWarrantyExpiry } from "@/lib/duration";
 import { parseProductType } from "@/lib/product";
+import { notifyRestockIfNeeded } from "@/lib/restock-alert";
 
 // FIX #6: Gunakan shared parseProductType dari lib/product.ts (hapus definisi lokal)
 
@@ -218,6 +219,10 @@ export async function POST(req: NextRequest) {
 
     // Destructure hasil dari $transaction
     const { account, transaction, newUsedSlots, accountMaxSlots } = txResult;
+
+    await notifyRestockIfNeeded(account.productType).catch((error) => {
+      console.error("[Webhook Lynk.id] restock alert error:", error);
+    });
 
     // ===== 6. AFFILIATE KOMISI =====
     // Komisi diberikan jika: user punya referredBy affiliate (baik order pertama maupun repeat)

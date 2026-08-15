@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { parseDuration, calcWarrantyExpiry } from "@/lib/duration";
 import { parseProductType } from "@/lib/product";
+import { notifyRestockIfNeeded } from "@/lib/restock-alert";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requirePermission("page_transactions");
@@ -107,6 +108,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
 
     const { account } = txResult;
+
+    await notifyRestockIfNeeded(account.productType).catch((error) => {
+      console.error("[Manual Confirm] restock alert error:", error);
+    });
 
     // HIT URL APPSHEET (Same as in payment-success webhook)
     try {
