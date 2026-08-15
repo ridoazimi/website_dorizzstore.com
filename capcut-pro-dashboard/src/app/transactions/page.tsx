@@ -38,6 +38,7 @@ import { useRouter } from "next/navigation";
 interface Transaction {
   id: string;
   lynkIdRef: string | null;
+  receiptNumber: string | null;
   amount: number;
   productName: string | null;
   status: string | null;
@@ -620,7 +621,7 @@ export default function TransactionsPage() {
             <div className="flex flex-wrap items-center gap-3">
               <div className="search-box flex-1 min-w-[160px] max-w-xs">
                 <Search size={16} className="search-icon" />
-                <input type="text" placeholder="Cari nama, email, ID..." className="form-input !pl-10 text-sm" value={search} onChange={(e) => setSearch(e.target.value)} />
+                <input type="text" placeholder="Cari nama, email, ID, no. pemesanan..." className="form-input !pl-10 text-sm" value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
               {/* Filter tanggal button dengan indikator aktif */}
               <button
@@ -844,6 +845,7 @@ export default function TransactionsPage() {
                       <tr>
                         <th>UUID (Transaksi)</th>
                         <th>Lynk.id Ref</th>
+                        <th>No. Pemesanan</th>
                         <th>Pelanggan</th>
                         <th>WhatsApp</th>
                         <th>Akun CapCut</th>
@@ -861,7 +863,7 @@ export default function TransactionsPage() {
                     </thead>
                     <tbody>
                       {transactions.length === 0 ? (
-                        <tr><td colSpan={15} className="text-center py-8 text-[var(--text-muted)]">Belum ada transaksi</td></tr>
+                        <tr><td colSpan={16} className="text-center py-8 text-[var(--text-muted)]">Belum ada transaksi</td></tr>
                       ) : (
                         transactions.map((trx) => (
                           <tr key={trx.id}>
@@ -874,6 +876,7 @@ export default function TransactionsPage() {
                               </div>
                             </td>
                             <td className="font-mono text-xs text-[var(--text-muted)]">{trx.lynkIdRef || <span className="opacity-40">-</span>}</td>
+                            <td className="font-mono text-xs text-[var(--text-muted)]">{trx.receiptNumber || <span className="opacity-40">-</span>}</td>
                             <td>
                               <p className="font-medium">{trx.user?.name || "-"}</p>
                               <p className="text-xs text-[var(--text-muted)]">{maskEmail(trx.user?.email)}</p>
@@ -953,6 +956,10 @@ export default function TransactionsPage() {
                           <div className="data-card-row">
                             <span className="data-card-label">Nominal</span>
                             <span className="data-card-value font-semibold text-[var(--text-primary)]">{formatCurrency(Number(trx.amount))}</span>
+                          </div>
+                          <div className="data-card-row">
+                            <span className="data-card-label">No. Pemesanan</span>
+                            <span className="data-card-value font-mono text-xs">{trx.receiptNumber || "-"}</span>
                           </div>
                           <div className="data-card-row">
                             <span className="data-card-label">Produk</span>

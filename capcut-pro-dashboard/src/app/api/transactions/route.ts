@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
       const trimmedSearch = search.trim();
       const searchConditions: Record<string, unknown>[] = [
         { lynkIdRef: { contains: trimmedSearch, mode: "insensitive" } },
+        { receiptNumber: { contains: trimmedSearch, mode: "insensitive" } },
         { user: { name: { contains: trimmedSearch, mode: "insensitive" } } },
         { user: { email: { contains: trimmedSearch, mode: "insensitive" } } },
         { user: { whatsapp: { contains: trimmedSearch, mode: "insensitive" } } },
