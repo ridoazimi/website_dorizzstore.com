@@ -140,6 +140,24 @@ export default function ProductsPage() {
     setIsModalOpen(true);
   };
 
+  const handleDurationChange = (value: string) => {
+    const duration = Math.max(1, parseInt(value, 10) || 1);
+    const replaceDays = (text: string, slug = false) => slug
+      ? text.replace(/\b\d{1,3}-hari\b/gi, `${duration}-hari`)
+      : text.replace(/\b\d{1,3}\s*hari\b/gi, `${duration} Hari`);
+
+    setFormData((current) => ({
+      ...current,
+      duration: String(duration),
+      name: replaceDays(current.name),
+      slug: replaceDays(current.slug, true),
+      category: replaceDays(current.category),
+      description: replaceDays(current.description),
+      rules: replaceDays(current.rules),
+      messageTemplate: replaceDays(current.messageTemplate),
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -509,13 +527,17 @@ export default function ProductsPage() {
                 <div>
                   <label className="form-label">Durasi (Hari)</label>
                   <input 
-                    type="number" 
-                    required 
-                    className="form-input" 
+                    type="number"
+                    min="1"
+                    required
+                    className="form-input"
                     placeholder="30"
                     value={formData.duration}
-                    onChange={(e) => setFormData({...formData, duration: e.target.value})}
+                    onChange={(e) => handleDurationChange(e.target.value)}
                   />
+                  <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                    Sumber utama durasi. Nama, slug, kategori, deskripsi, rules, dan template WA mengikuti angka ini.
+                  </p>
                 </div>
                 <div className="md:col-span-2">
                   <label className="form-label">Gambar Produk</label>
