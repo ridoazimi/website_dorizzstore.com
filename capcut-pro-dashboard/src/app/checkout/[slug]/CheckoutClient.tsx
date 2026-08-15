@@ -15,6 +15,7 @@ export default function CheckoutClient({ product, initialRef }: { product: any, 
     name: "",
     email: "",
     whatsapp: "",
+    city: "",
     affiliateCode: initialRef
   });
   const [loading, setLoading] = useState(false);
@@ -89,7 +90,7 @@ export default function CheckoutClient({ product, initialRef }: { product: any, 
       } else {
         // Fallback ke WhatsApp jika API Payment Gateway gagal
         const waNumber = "6281234567890";
-        const message = `Halo Admin Dorizz Store, saya ingin melakukan pembayaran untuk pesanan saya:%0A%0ANama: ${formData.name}%0AEmail: ${formData.email}%0AProduk: *${data.productName}*%0ATotal: *${formatCurrency(data.price)}*%0A%0AMohon info rekening pembayaran. Terima kasih.`;
+        const message = `Halo Admin Dorizz Store, saya ingin melakukan pembayaran untuk pesanan saya:%0A%0ANama: ${formData.name}%0AEmail: ${formData.email}%0AKabupaten/Kota: ${formData.city}%0AProduk: *${data.productName}*%0ATotal: *${formatCurrency(data.price)}*%0A%0AMohon info rekening pembayaran. Terima kasih.`;
         window.location.href = `https://wa.me/${waNumber}?text=${message}`;
       }
 
@@ -205,6 +206,19 @@ export default function CheckoutClient({ product, initialRef }: { product: any, 
                         value={formData.whatsapp}
                         onChange={e => setFormData({ ...formData, whatsapp: e.target.value })}
                         placeholder="081234567890"
+                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl px-4 py-4 text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] transition-all"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-[var(--text-secondary)] mb-2.5 ml-1">Kabupaten/Kota</label>
+                      <input
+                        type="text"
+                        required
+                        id="checkout-city-input"
+                        value={formData.city}
+                        onChange={e => setFormData({ ...formData, city: e.target.value })}
+                        placeholder="Contoh: Kota Surabaya"
+                        autoComplete="address-level2"
                         className="w-full bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl px-4 py-4 text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] transition-all"
                       />
                     </div>
