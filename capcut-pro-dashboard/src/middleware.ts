@@ -13,12 +13,14 @@ const PUBLIC_PATHS = [
   "/api/cron",
   "/api/products",
   "/api/checkout",
+  "/api/referral",
   "/checkout",
   "/payment",
   "/terms",
   "/privacy",
   "/warranty",
   "/testimoni",
+  "/r",
   // Affiliate public paths
 
 

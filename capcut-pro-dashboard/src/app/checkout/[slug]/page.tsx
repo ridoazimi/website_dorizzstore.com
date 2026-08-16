@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
 import CheckoutClient from "./CheckoutClient";
 import type { Metadata } from "next";
 
@@ -64,6 +65,8 @@ export default async function CheckoutPage(props: {
 }) {
   const params = await props.params;
   const searchParams = await props.searchParams;
+  const cookieStore = await cookies();
+  const referralCookie = cookieStore.get("dorizz_referral")?.value || "";
   
   const product = await prisma.product.findUnique({
     where: { slug: params.slug }
@@ -94,5 +97,5 @@ export default async function CheckoutPage(props: {
   };
 
 
-  return <CheckoutClient product={productData} initialRef={searchParams.ref || ""} />;
+  return <CheckoutClient product={productData} initialRef={searchParams.ref || referralCookie} />;
 }

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { findExistingCustomer, getGeneralCheckoutPath } from "@/lib/loyalty-referral";
 
 export async function POST(req: Request) {
   try {
@@ -14,11 +15,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Produk tidak ditemukan" }, { status: 404 });
     }
 
-    let affiliateId = null;
+    let affiliateId: string | null = null;
     if (affiliateCode) {
-      const affiliate = await prisma.affiliate.findFirst({ where: { inviteToken: affiliateCode } });
-      if (affiliate) {
-        affiliateId = affiliate.id;
+      const affiliate = await prisma.affiliate.findFirst({
+        where: { inviteToken: String(affiliateCode).trim(), status: "active" },
+        select: { id: true },
+      });
+      if (!affiliate) {
+        return NextResponse.json({ error: "Link referral tidak valid atau sudah tidak aktif" }, { status: 400 });
+      }
+      affiliateId = affiliate.id;
+
+      const existingCustomer = await findExistingCustomer(prisma, email, whatsapp);
+      if (existingCustomer) {
+        return NextResponse.json({
+          code: "EXISTING_CUSTOMER",
+          error: "Data Anda sudah terdaftar di Dorizz Store. Silakan lanjutkan order melalui link general Dorizz Store.",
+          generalCheckoutUrl: getGeneralCheckoutPath(product.slug),
+        }, { status: 409 });
       }
     }
 
@@ -44,21 +58,20 @@ export async function POST(req: Request) {
       }
     }
 
-    // Cari atau buat User
-    let user = await prisma.user.findUnique({ where: { email } });
+    // Cari atau buat User berdasarkan email dan nomor WhatsApp yang dinormalisasi.
+    let user = await findExistingCustomer(prisma, email, whatsapp);
     if (user) {
       user = await prisma.user.update({
-        where: { email },
+        where: { id: user.id },
         data: {
           name,
           whatsapp,
-          ...(affiliateId && !user.referredBy ? { referredBy: affiliateId } : {})
         }
       });
     } else {
       user = await prisma.user.create({
         data: {
-          email,
+          email: String(email).trim().toLowerCase(),
           name,
           whatsapp,
           customerType: "new",

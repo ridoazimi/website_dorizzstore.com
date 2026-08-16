@@ -1,70 +1,77 @@
-import { prisma } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 import { requireAffiliate } from "@/lib/affiliate-auth";
+import { getPointSummary, pointsToRupiah } from "@/lib/loyalty-points";
 
-// GET /api/affiliate-portal/dashboard — Dashboard stats for affiliate
 export async function GET() {
   const auth = await requireAffiliate();
   if ("error" in auth) return auth.error;
 
   try {
     const { affiliate } = auth;
+    const [member, pointSummary, recentRewards, pendingWithdrawals] = await Promise.all([
+      prisma.affiliate.findUnique({
+        where: { id: affiliate.id },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          whatsapp: true,
+          inviteToken: true,
+          status: true,
+          createdAt: true,
+          _count: { select: { referredUsers: true, withdrawals: true } },
+        },
+      }),
+      getPointSummary(affiliate.id, prisma),
+      prisma.affiliatePointLedger.findMany({
+        where: { affiliateId: affiliate.id, type: "referral_reward" },
+        include: {
+          user: { select: { name: true } },
+          transaction: { select: { productName: true, amount: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+      prisma.affiliateWithdrawal.count({
+        where: { affiliateId: affiliate.id, status: { in: ["pending", "processing", "approved"] } },
+      }),
+    ]);
 
-    // Get affiliate data with counts
-    const data = await prisma.affiliate.findUnique({
-      where: { id: affiliate.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        commissionRate: true,
-        totalEarned: true,
-        balance: true,
-        _count: { select: { referredUsers: true, commissions: true, withdrawals: true } },
-      },
-    });
-
-    if (!data) {
-      return NextResponse.json({ error: "Affiliate tidak ditemukan" }, { status: 404 });
+    if (!member) {
+      return NextResponse.json({ error: "Member tidak ditemukan" }, { status: 404 });
     }
 
-    // Recent commissions (last 10)
-    const recentCommissions = await prisma.affiliateCommission.findMany({
-      where: { affiliateId: affiliate.id },
-      include: {
-        user: { select: { name: true } },
-        transaction: { select: { productName: true, amount: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    });
-
-    // Monthly commission stats (last 6 months)
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-    const allCommissions = await prisma.affiliateCommission.findMany({
-      where: {
-        affiliateId: affiliate.id,
-        createdAt: { gte: sixMonthsAgo },
-      },
-      select: { amount: true, createdAt: true },
+    const monthlyRows = await prisma.affiliatePointLedger.findMany({
+      where: { affiliateId: affiliate.id, type: "referral_reward" },
+      select: { points: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     });
-
-    // Group by month
     const monthlyStats: Record<string, number> = {};
-    allCommissions.forEach((c) => {
-      const month = new Date(c.createdAt!).toISOString().slice(0, 7); // "2026-04"
-      monthlyStats[month] = (monthlyStats[month] || 0) + Number(c.amount);
+    monthlyRows.forEach(row => {
+      const month = row.createdAt.toISOString().slice(0, 7);
+      monthlyStats[month] = (monthlyStats[month] || 0) + row.points;
     });
 
     return NextResponse.json({
-      affiliate: data,
-      recentCommissions,
+      member: {
+        ...member,
+        referralUrl: member.inviteToken ? `/r/${member.inviteToken}` : null,
+        ...pointSummary,
+        availableRupiah: pointsToRupiah(pointSummary.availablePoints),
+      },
+      // Keep the old top-level key during the UI migration.
+      affiliate: {
+        ...member,
+        ...pointSummary,
+        availableRupiah: pointsToRupiah(pointSummary.availablePoints),
+      },
+      recentRewards,
+      pendingWithdrawals,
       monthlyStats,
     });
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    console.error("GET /api/affiliate-portal/dashboard error:", error);
+    return NextResponse.json({ error: "Gagal mengambil dashboard member" }, { status: 500 });
   }
 }

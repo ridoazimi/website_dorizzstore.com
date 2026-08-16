@@ -19,6 +19,7 @@ export default function CheckoutClient({ product, initialRef }: { product: any, 
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [existingCustomerWarning, setExistingCustomerWarning] = useState<{ message: string; generalUrl: string } | null>(null);
   const [qrisData, setQrisData] = useState<any>(null);
   const [isVerified, setIsVerified] = useState(false);
 
@@ -81,7 +82,17 @@ export default function CheckoutClient({ product, initialRef }: { product: any, 
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Gagal memproses checkout");
+      if (!res.ok) {
+        if (data.code === "EXISTING_CUSTOMER") {
+          setExistingCustomerWarning({
+            message: data.error || "Data Anda sudah terdaftar di Dorizz Store.",
+            generalUrl: data.generalCheckoutUrl || `/checkout/${product.slug}`,
+          });
+          setLoading(false);
+          return;
+        }
+        throw new Error(data.error || "Gagal memproses checkout");
+      }
 
       // Jika ada data QRIS dari KlikQRIS
       if (data.paymentData) {
@@ -357,6 +368,34 @@ export default function CheckoutClient({ product, initialRef }: { product: any, 
           </div>
         </div>
       </main>
+
+      {existingCustomerWarning && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4" role="dialog" aria-modal="true" aria-labelledby="existing-customer-title">
+          <div className="w-full max-w-md rounded-3xl border border-amber-400/30 bg-[var(--bg-card)] p-6 md:p-8 shadow-2xl">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400">
+              <ShieldCheck size={28} />
+            </div>
+            <h2 id="existing-customer-title" className="text-center text-xl font-bold text-[var(--text-primary)]">Link Referral Khusus Customer Baru</h2>
+            <p className="mt-3 text-center text-sm leading-relaxed text-[var(--text-secondary)]">{existingCustomerWarning.message}</p>
+            <div className="mt-6 grid gap-3">
+              <button
+                type="button"
+                onClick={() => router.push(existingCustomerWarning.generalUrl)}
+                className="h-12 rounded-xl bg-[var(--accent-primary)] font-bold text-black transition hover:brightness-110"
+              >
+                Lanjut ke Link General Dorizz
+              </button>
+              <button
+                type="button"
+                onClick={() => setExistingCustomerWarning(null)}
+                className="h-12 rounded-xl border border-[var(--border-color)] text-sm font-semibold text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
+              >
+                Kembali
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>

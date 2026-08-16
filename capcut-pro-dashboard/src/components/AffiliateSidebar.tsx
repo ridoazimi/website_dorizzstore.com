@@ -18,8 +18,8 @@ import { useState } from "react";
 const navItems = [
   { href: "/affiliate", label: "Dashboard", icon: LayoutDashboard },
   { href: "/affiliate/referrals", label: "Referral Saya", icon: Users },
-  { href: "/affiliate/commissions", label: "Riwayat Komisi", icon: Coins },
-  { href: "/affiliate/payout", label: "Tarik Saldo", icon: Wallet },
+  { href: "/affiliate/commissions", label: "Riwayat Poin", icon: Coins },
+  { href: "/affiliate/payout", label: "Withdraw Poin", icon: Wallet },
 ];
 
 export default function AffiliateSidebar() {
@@ -75,7 +75,7 @@ export default function AffiliateSidebar() {
             </div>
             <div>
               <h1 className="text-base font-bold text-white tracking-tight">Dorizz Store</h1>
-              <p className="text-[11px] text-[var(--text-muted)]">Affiliate Portal</p>
+              <p className="text-[11px] text-[var(--text-muted)]">Loyalty Member</p>
             </div>
           </div>
           <button
@@ -96,10 +96,10 @@ export default function AffiliateSidebar() {
                 border: "1px solid rgba(16,185,129,0.2)",
               }}
             >
-              <p className="text-[11px] text-emerald-400/70 uppercase tracking-wider font-semibold">Saldo Anda</p>
-              <p className="text-xl font-bold text-emerald-400 mt-1">Rp {fmt(Number(user.balance || 0))}</p>
+              <p className="text-[11px] text-emerald-400/70 uppercase tracking-wider font-semibold">Poin Tersedia</p>
+              <p className="text-xl font-bold text-emerald-400 mt-1">{fmt(Number(user.availablePoints || 0))} poin</p>
               <p className="text-[11px] text-[var(--text-muted)] mt-2">
-                Komisi: {Number(user.commissionRate)}% per transaksi
+                Senilai Rp {fmt(Number(user.availableRupiah || 0))}
               </p>
             </div>
           </div>

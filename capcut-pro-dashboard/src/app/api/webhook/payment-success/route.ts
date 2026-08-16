@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { parseDuration, calcWarrantyExpiry } from "@/lib/duration";
 import { parseProductType } from "@/lib/product";
+import { creditReferralReward } from "@/lib/loyalty-points";
 
 /**
  * Webhook baru untuk memproses pembayaran lunas
@@ -160,9 +161,16 @@ export async function POST(req: NextRequest) {
         if (updatedAccount.count === 0) {
           throw new Error("SLOT_PENUH_RETRY"); // Jarang terjadi karena sudah difilter
         }
+
       }
 
-      return { account, transaction: updatedTrx };
+      const reward = await creditReferralReward(tx, {
+        affiliateId: user.referredBy,
+        userId: user.id,
+        transactionId: updatedTrx.id,
+      });
+
+      return { account, transaction: updatedTrx, reward };
     });
 
     const { account } = txResult;

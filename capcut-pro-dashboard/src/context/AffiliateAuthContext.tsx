@@ -7,10 +7,16 @@ interface AffiliateUser {
   email: string;
   name: string;
   whatsapp: string | null;
-  commissionRate: number;
-  totalEarned: number;
-  balance: number;
+  inviteToken?: string | null;
+  availablePoints: number;
+  pendingPoints: number;
+  totalPointsEarned: number;
+  availableRupiah: number;
   status: string;
+  // Legacy fields kept optional while existing sessions refresh.
+  commissionRate?: number;
+  totalEarned?: number;
+  balance?: number;
 }
 
 interface AffiliateAuthContextType {
@@ -36,7 +42,7 @@ export function AffiliateAuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch("/api/affiliate-portal/auth/me");
       if (res.ok) {
         const json = await res.json();
-        setUser(json.affiliate || null);
+        setUser(json.member || json.affiliate || null);
       } else {
         setUser(null);
       }
@@ -47,6 +53,7 @@ export function AffiliateAuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchUser(); }, [fetchUser]);
 
   const logout = async () => {
