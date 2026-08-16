@@ -46,6 +46,15 @@ export async function GET(req: NextRequest) {
       prisma.user.count({ where }),
     ]);
 
+    const referralIds = referrals.map(r => r.id);
+    const rewards = referralIds.length > 0
+      ? await prisma.affiliatePointLedger.findMany({
+          where: { affiliateId: affiliate.id, userId: { in: referralIds }, type: "referral_reward" },
+          select: { userId: true, points: true, status: true },
+        })
+      : [];
+    const rewardMap = new Map(rewards.map(reward => [reward.userId, reward]));
+
     // Mask emails and calculate total spent per referral
     const maskedReferrals = referrals.map((r) => {
       const email = r.email;
@@ -62,6 +71,8 @@ export async function GET(req: NextRequest) {
         subscriptionStatus: r.subscriptionStatus,
         totalTransactions: r._count.transactions,
         totalSpent,
+        rewardPoints: rewardMap.get(r.id)?.points || 0,
+        rewardStatus: rewardMap.get(r.id)?.status || "not_credited",
       };
     });
 

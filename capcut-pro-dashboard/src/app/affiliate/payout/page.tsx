@@ -1,350 +1,174 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertTriangle, Banknote, CheckCircle, ChevronLeft, ChevronRight, Clock, Loader2, Send, Wallet, XCircle } from "lucide-react";
 import { useAffiliateAuth } from "@/context/AffiliateAuthContext";
-import {
-  Wallet,
-  Loader2,
-  Send,
-  CheckCircle,
-  Clock,
-  XCircle,
-  AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
-  Banknote,
-} from "lucide-react";
 
 interface Withdrawal {
   id: string;
+  points: number | null;
   amount: number;
+  method: string | null;
+  accountNumber: string | null;
   status: string;
   notes: string | null;
   createdAt: string;
   processedAt: string | null;
 }
 
-const MIN_PAYOUT = 10000;
-const MAX_PAYOUT = 1000000;
-const QUICK_AMOUNTS = [10000, 20000, 30000, 50000, 100000];
+const MIN_POINTS = 30;
+const MAX_POINTS = 1000;
+const QUICK_POINTS = [30, 60, 90, 150, 300];
+const METHODS = [
+  { value: "dana", label: "DANA" },
+  { value: "gopay", label: "GoPay" },
+  { value: "ovo", label: "OVO" },
+  { value: "shopeepay", label: "ShopeePay" },
+  { value: "bank_transfer", label: "Transfer Bank" },
+];
 
-export default function AffiliatePayoutPage() {
+export default function LoyaltyPayoutPage() {
   const { user, refetch } = useAffiliateAuth();
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-
-  const [method, setMethod] = useState<"dana" | "bank_transfer">("dana");
-  const [amount, setAmount] = useState("");
+  const [points, setPoints] = useState("");
+  const [method, setMethod] = useState("dana");
   const [accountNumber, setAccountNumber] = useState("");
   const [accountName, setAccountName] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const fmt = (n: number) => new Intl.NumberFormat("id-ID").format(n);
+  const fmt = (value: number) => new Intl.NumberFormat("id-ID").format(value);
+  const rupiah = (value: number) => `Rp ${fmt(value * 1000)}`;
 
   const fetchWithdrawals = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams();
-    params.set("page", page.toString());
-    const res = await fetch(`/api/affiliate-portal/payout?${params}`);
-    const data = await res.json();
-    setWithdrawals(data.withdrawals || []);
-    setTotalPages(data.totalPages || 1);
-    setLoading(false);
+    try {
+      const response = await fetch(`/api/affiliate-portal/payout?page=${page}`);
+      const data = await response.json();
+      setWithdrawals(data.withdrawals || []);
+      setTotalPages(data.totalPages || 1);
+    } finally {
+      setLoading(false);
+    }
   }, [page]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchWithdrawals(); }, [fetchWithdrawals]);
 
-  const handlePayout = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleWithdraw = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError("");
     setSuccess("");
-
-    const amountNum = parseFloat(amount);
-    if (!amountNum || amountNum < MIN_PAYOUT) {
-      setError(`Minimum payout Rp ${fmt(MIN_PAYOUT)}`);
+    const value = Number(points);
+    if (!Number.isInteger(value) || value < MIN_POINTS || value > MAX_POINTS || value % 3 !== 0) {
+      setError(`Withdraw harus ${MIN_POINTS}–${MAX_POINTS} poin dan kelipatan 3.`);
       return;
     }
-    if (amountNum > MAX_PAYOUT) {
-      setError(`Maksimum payout Rp ${fmt(MAX_PAYOUT)}`);
+    if (value > Number(user?.availablePoints || 0)) {
+      setError("Saldo poin available tidak mencukupi.");
       return;
     }
-    if (!accountNumber) {
-      setError("Nomor akun / HP wajib diisi");
+    if (!accountNumber.trim()) {
+      setError("Nomor rekening atau e-wallet wajib diisi.");
       return;
     }
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/affiliate-portal/payout", {
+      const response = await fetch("/api/affiliate-portal/payout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: amountNum, method, accountNumber, accountName }),
+        body: JSON.stringify({ points: value, method, accountNumber, accountName }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Gagal request payout");
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || "Gagal membuat pengajuan withdraw.");
         return;
       }
-      setSuccess(data.message || "Payout berhasil diajukan!");
-      setAmount("");
+      setSuccess(data.message || "Pengajuan withdraw berhasil dibuat.");
+      setPoints("");
       setAccountNumber("");
       setAccountName("");
       refetch();
       fetchWithdrawals();
     } catch {
-      setError("Terjadi kesalahan. Coba lagi.");
+      setError("Terjadi kesalahan. Silakan coba lagi.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const hasPending = withdrawals.some(w => w.status === "pending" || w.status === "processing");
-  const balance = Number(user?.balance || 0);
+  const hasPending = withdrawals.some(item => ["pending", "processing", "approved"].includes(item.status));
+  const availablePoints = Number(user?.availablePoints || 0);
 
   const statusIcon = (status: string) => {
-    if (status === "approved") return <CheckCircle size={14} className="text-emerald-400" />;
-    if (status === "pending" || status === "processing") return <Clock size={14} className="text-amber-400 animate-pulse" />;
+    if (status === "paid") return <CheckCircle size={14} className="text-emerald-400" />;
+    if (["pending", "processing", "approved"].includes(status)) return <Clock size={14} className="animate-pulse text-amber-400" />;
     if (status === "rejected") return <XCircle size={14} className="text-rose-400" />;
     return <Clock size={14} className="text-[var(--text-muted)]" />;
   };
 
-  const statusBadge = (status: string) => {
-    if (status === "approved") return "badge-success";
-    if (status === "pending" || status === "processing") return "badge-warning";
-    if (status === "rejected") return "badge-danger";
-    return "badge-neutral";
-  };
-
-  const statusLabel = (status: string) => {
-    if (status === "approved") return "Berhasil";
-    if (status === "processing") return "Top Up...";
-    if (status === "pending") return "Menunggu";
-    if (status === "rejected") return "Ditolak";
-    return status;
-  };
+  const statusLabel: Record<string, string> = { pending: "Menunggu", processing: "Diproses", approved: "Disetujui", paid: "Dibayar", rejected: "Ditolak" };
+  const statusClass: Record<string, string> = { pending: "badge-warning", processing: "badge-warning", approved: "badge-info", paid: "badge-success", rejected: "badge-danger" };
 
   return (
     <div>
-      <div className="px-4 sm:px-8 pt-6 sm:pt-8 pb-2">
-        <h1 className="text-xl sm:text-2xl font-bold text-[var(--text-primary)]">Tarik Saldo</h1>
-        <p className="text-xs sm:text-sm text-[var(--text-muted)] mt-1">
-          Request payout ke DANA atau Transfer Bank
-        </p>
+      <div className="px-4 pb-2 pt-6 sm:px-8 sm:pt-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-emerald-400">Loyalty Member</p>
+        <h1 className="mt-2 text-xl font-bold text-[var(--text-primary)] sm:text-2xl">Withdraw Poin</h1>
+        <p className="mt-1 text-xs text-[var(--text-muted)] sm:text-sm">Ajukan pencairan sendiri. Pembayaran tetap diverifikasi dan diproses oleh admin.</p>
       </div>
 
-      <div className="px-4 sm:px-8 pb-8 space-y-5 sm:space-y-6">
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
-          {/* Payout Form */}
-          <div className="lg:col-span-2">
-            <div className="glass-card p-4 sm:p-6 space-y-4 sm:space-y-5">
-              {/* Balance display */}
-              <div
-                className="p-3 sm:p-4 rounded-xl text-center"
-                style={{
-                  background: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(5,150,105,0.08))",
-                  border: "1px solid rgba(16,185,129,0.25)",
-                }}
-              >
-                <p className="text-[10px] sm:text-xs text-emerald-400/70 uppercase tracking-wider font-semibold">Saldo Tersedia</p>
-                <p className="text-2xl sm:text-3xl font-bold text-emerald-400 mt-1">Rp {fmt(balance)}</p>
-                <p className="text-[10px] text-[var(--text-muted)] mt-2">Min. payout Rp {fmt(MIN_PAYOUT)}</p>
+      <div className="grid grid-cols-1 gap-5 px-4 pb-8 lg:grid-cols-5 sm:px-8 sm:gap-6">
+        <div className="lg:col-span-2">
+          <div className="glass-card space-y-5 p-5 sm:p-6">
+            <div className="rounded-2xl border border-emerald-400/25 bg-gradient-to-br from-emerald-500/15 to-emerald-900/10 p-5 text-center">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300">Poin Available</p>
+              <p className="mt-1 text-3xl font-bold text-emerald-400">{fmt(availablePoints)} poin</p>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">Senilai {rupiah(availablePoints)}</p>
+              <p className="mt-3 text-[10px] text-[var(--text-muted)]">Minimum {MIN_POINTS} poin · Maksimum {MAX_POINTS} poin</p>
+            </div>
+
+            {hasPending && <div className="flex items-start gap-2 rounded-xl border border-amber-400/20 bg-amber-500/10 p-3 text-xs text-amber-300"><AlertTriangle size={15} className="mt-0.5 shrink-0" />Selesaikan pengajuan sebelumnya sebelum membuat pengajuan baru.</div>}
+
+            <form onSubmit={handleWithdraw} className="space-y-4">
+              <div>
+                <label className="form-label">Jumlah poin</label>
+                <div className="mb-2 flex flex-wrap gap-1.5">
+                  {QUICK_POINTS.map(value => <button key={value} type="button" disabled={value > availablePoints || hasPending} onClick={() => setPoints(String(value))} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-30 ${Number(points) === value ? "border-emerald-400/50 bg-emerald-500/20 text-emerald-300" : "border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-secondary)]"}`}>{value}p</button>)}
+                </div>
+                <input type="number" min={MIN_POINTS} max={Math.min(MAX_POINTS, availablePoints)} step={3} value={points} onChange={event => setPoints(event.target.value)} className="form-input" placeholder="Contoh: 30" disabled={hasPending} />
+                {Number(points) > 0 && <p className="mt-1 text-xs text-emerald-400">Nilai withdraw: {rupiah(Number(points))}</p>}
               </div>
 
-              {hasPending && (
-                <div className="flex items-start gap-2 p-3 rounded-xl text-xs" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)" }}>
-                  <AlertTriangle size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
-                  <span className="text-amber-300">Ada payout yang masih diproses. Tunggu sampai selesai.</span>
-                </div>
-              )}
+              <div>
+                <label className="form-label">Metode pembayaran</label>
+                <select value={method} onChange={event => setMethod(event.target.value)} className="form-input" disabled={hasPending}>{METHODS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+              </div>
 
-              <form onSubmit={handlePayout} className="space-y-3 sm:space-y-4">
-                {/* Method */}
-                <div>
-                  <label className="form-label">Metode Pembayaran</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setMethod("dana")}
-                      className={`p-2.5 sm:p-3 rounded-xl text-xs sm:text-sm font-medium transition-all text-center cursor-pointer ${
-                        method === "dana"
-                          ? "bg-[rgba(0,112,255,0.15)] border-[rgba(0,112,255,0.4)] text-blue-400"
-                          : "bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-secondary)]"
-                      }`}
-                      style={{ border: "1px solid" }}
-                    >
-                      💰 DANA
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMethod("bank_transfer")}
-                      className={`p-2.5 sm:p-3 rounded-xl text-xs sm:text-sm font-medium transition-all text-center cursor-pointer ${
-                        method === "bank_transfer"
-                          ? "bg-[rgba(16,185,129,0.15)] border-[rgba(16,185,129,0.4)] text-emerald-400"
-                          : "bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-secondary)]"
-                      }`}
-                      style={{ border: "1px solid" }}
-                    >
-                      🏦 Bank
-                    </button>
-                  </div>
-                </div>
+              <div><label className="form-label">Nomor rekening / e-wallet</label><input value={accountNumber} onChange={event => setAccountNumber(event.target.value)} className="form-input" placeholder="Masukkan nomor tujuan" disabled={hasPending} /></div>
+              <div><label className="form-label">Nama pemilik</label><input value={accountName} onChange={event => setAccountName(event.target.value)} className="form-input" placeholder="Nama sesuai tujuan pembayaran" disabled={hasPending} /></div>
 
-                {/* Account Number */}
-                <div>
-                  <label className="form-label">
-                    {method === "dana" ? "Nomor DANA" : "Nomor Rekening"}
-                  </label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder={method === "dana" ? "08xxxxxxxxxx" : "Nomor rekening bank"}
-                    value={accountNumber}
-                    onChange={e => setAccountNumber(e.target.value)}
-                  />
-                </div>
+              {error && <div className="rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{error}</div>}
+              {success && <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{success}</div>}
 
-                {method === "bank_transfer" && (
-                  <div>
-                    <label className="form-label">Nama & Bank</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Contoh: John Doe - BCA"
-                      value={accountName}
-                      onChange={e => setAccountName(e.target.value)}
-                    />
-                  </div>
-                )}
-
-                {/* Amount */}
-                <div>
-                  <label className="form-label">Jumlah (Rp)</label>
-
-                  {/* Quick amount buttons */}
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {QUICK_AMOUNTS.map(q => (
-                      <button
-                        key={q}
-                        type="button"
-                        onClick={() => setAmount(q.toString())}
-                        disabled={q > balance}
-                        className={`px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                          parseFloat(amount) === q
-                            ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
-                            : "bg-[var(--bg-secondary)] text-[var(--text-secondary)] border-[var(--border-color)] hover:text-[var(--text-primary)] hover:border-[var(--border-color)]"
-                        }`}
-                        style={{ border: "1px solid" }}
-                      >
-                        {fmt(q)}
-                      </button>
-                    ))}
-                  </div>
-
-                  <input
-                    type="number"
-                    className="form-input"
-                    placeholder={`Min. ${fmt(MIN_PAYOUT)} — Maks. ${fmt(MAX_PAYOUT)}`}
-                    value={amount}
-                    onChange={e => setAmount(e.target.value)}
-                    min={MIN_PAYOUT}
-                    max={Math.min(balance, MAX_PAYOUT)}
-                  />
-                  {balance >= MIN_PAYOUT && (
-                    <button
-                      type="button"
-                      onClick={() => setAmount(Math.min(balance, MAX_PAYOUT).toString())}
-                      className="text-xs text-emerald-400 hover:underline mt-1 cursor-pointer"
-                    >
-                      Tarik maks (Rp {fmt(Math.min(balance, MAX_PAYOUT))})
-                    </button>
-                  )}
-                </div>
-
-                {error && (
-                  <div className="px-3 py-2 rounded-xl text-xs sm:text-sm text-rose-300" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)" }}>
-                    {error}
-                  </div>
-                )}
-                {success && (
-                  <div className="px-3 py-2 rounded-xl text-xs sm:text-sm text-emerald-300" style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)" }}>
-                    {success}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={submitting || hasPending || balance < MIN_PAYOUT}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 sm:py-3 rounded-xl font-semibold text-white text-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ background: "linear-gradient(135deg, #10b981, #059669)", boxShadow: "0 4px 20px rgba(16,185,129,0.3)" }}
-                >
-                  {submitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-                  {submitting ? "Memproses..." : "Request Payout"}
-                </button>
-              </form>
-            </div>
+              <button type="submit" disabled={submitting || hasPending || availablePoints < MIN_POINTS} className="flex w-full items-center justify-center gap-2 rounded-xl py-3 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50" style={{ background: "linear-gradient(135deg, #10b981, #059669)" }}>
+                {submitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                {submitting ? "Mengajukan..." : "Ajukan Withdraw"}
+              </button>
+            </form>
           </div>
+        </div>
 
-          {/* Withdrawal History */}
-          <div className="lg:col-span-3">
-            <div className="glass-card overflow-hidden">
-              <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-[var(--border-color)]">
-                <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
-                  <Banknote size={16} className="text-emerald-400" />
-                  Riwayat Penarikan
-                </h3>
-              </div>
-
-              {loading ? (
-                <div className="flex items-center justify-center py-12 sm:py-16">
-                  <Loader2 className="animate-spin text-emerald-400" size={28} />
-                </div>
-              ) : withdrawals.length === 0 ? (
-                <div className="text-center py-12 sm:py-16">
-                  <Wallet size={36} className="mx-auto mb-3 text-[var(--text-muted)]" />
-                  <p className="text-sm text-[var(--text-muted)]">Belum ada riwayat penarikan</p>
-                </div>
-              ) : (
-                <>
-                  <div className="divide-y divide-[rgba(99,102,241,0.06)]">
-                    {withdrawals.map(w => (
-                      <div key={w.id} className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 hover:bg-[rgba(16,185,129,0.03)] transition-colors">
-                        <div className="flex items-start gap-2 sm:gap-3 min-w-0">
-                          <div className="flex-shrink-0 mt-0.5">{statusIcon(w.status)}</div>
-                          <div className="min-w-0">
-                            <p className="text-xs sm:text-sm font-semibold text-rose-400">-Rp {fmt(Number(w.amount))}</p>
-                            <p className="text-[10px] sm:text-xs text-[var(--text-muted)] mt-0.5 truncate">{w.notes || "Tanpa catatan"}</p>
-                            <p className="text-[10px] text-[var(--text-muted)] mt-0.5 font-mono">
-                              {new Date(w.createdAt).toLocaleDateString("id-ID")}
-                            </p>
-                          </div>
-                        </div>
-                        <span className={`badge text-[10px] flex-shrink-0 ml-2 ${statusBadge(w.status)}`}>
-                          {statusLabel(w.status)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-center gap-2 p-3 sm:p-4 border-t border-[var(--border-color)]">
-                      <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="btn-icon">
-                        <ChevronLeft size={16} />
-                      </button>
-                      <span className="text-xs sm:text-sm text-[var(--text-secondary)]">
-                        {page} / {totalPages}
-                      </span>
-                      <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages} className="btn-icon">
-                        <ChevronRight size={16} />
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+        <div className="lg:col-span-3">
+          <div className="glass-card overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-[var(--border-color)] px-5 py-4"><Banknote size={17} className="text-emerald-400" /><h2 className="text-sm font-semibold text-[var(--text-primary)]">Riwayat Withdraw</h2></div>
+            {loading ? <div className="flex justify-center py-16"><Loader2 size={28} className="animate-spin text-emerald-400" /></div> : withdrawals.length === 0 ? <div className="py-16 text-center"><Wallet size={36} className="mx-auto mb-3 text-[var(--text-muted)]" /><p className="text-sm text-[var(--text-muted)]">Belum ada pengajuan withdraw.</p></div> : <div className="divide-y divide-[rgba(99,102,241,0.06)]">{withdrawals.map(item => <div key={item.id} className="flex items-start justify-between gap-3 px-5 py-4"><div className="flex min-w-0 items-start gap-3"><div className="mt-0.5 shrink-0">{statusIcon(item.status)}</div><div className="min-w-0"><p className="text-sm font-semibold text-[var(--text-primary)]">{fmt(Number(item.points || 0))} poin · Rp {fmt(Number(item.amount || 0))}</p><p className="mt-1 truncate text-xs text-[var(--text-muted)]">{item.method || "-"} · {item.accountNumber || "-"}</p><p className="mt-1 text-[10px] text-[var(--text-muted)]">{new Date(item.createdAt).toLocaleString("id-ID")}</p>{item.notes && <p className="mt-1 text-xs text-[var(--text-muted)]">{item.notes}</p>}</div></div><span className={`badge shrink-0 text-[10px] ${statusClass[item.status] || "badge-neutral"}`}>{statusLabel[item.status] || item.status}</span></div>)}</div>}
+            {totalPages > 1 && <div className="flex items-center justify-center gap-2 border-t border-[var(--border-color)] p-4"><button onClick={() => setPage(value => Math.max(1, value - 1))} disabled={page <= 1} className="btn-icon"><ChevronLeft size={16} /></button><span className="text-xs text-[var(--text-secondary)]">{page} / {totalPages}</span><button onClick={() => setPage(value => Math.min(totalPages, value + 1))} disabled={page >= totalPages} className="btn-icon"><ChevronRight size={16} /></button></div>}
           </div>
         </div>
       </div>

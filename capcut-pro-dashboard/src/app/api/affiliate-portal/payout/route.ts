@@ -1,12 +1,15 @@
-import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 import { requireAffiliate } from "@/lib/affiliate-auth";
-import { topupDANA } from "@/lib/orderkuota";
+import {
+  MIN_WITHDRAW_POINTS,
+  MAX_WITHDRAW_POINTS,
+  POINTS_PER_NEW_CUSTOMER,
+  pointsToRupiah,
+} from "@/lib/loyalty-points";
 
-const MIN_PAYOUT = 10000; // Minimum Rp 10.000
-const MAX_PAYOUT = 1000000; // Maksimum Rp 1.000.000
+const METHODS = ["dana", "gopay", "ovo", "shopeepay", "bank_transfer"] as const;
 
-// POST /api/affiliate-portal/payout — Request payout
 export async function POST(req: NextRequest) {
   const auth = await requireAffiliate();
   if ("error" in auth) return auth.error;
@@ -14,157 +17,99 @@ export async function POST(req: NextRequest) {
   try {
     const { affiliate } = auth;
     const body = await req.json();
-    const { amount, method, accountNumber, accountName } = body;
+    const points = Math.trunc(Number(body.points));
+    const method = String(body.method || "");
+    const accountNumber = String(body.accountNumber || "").trim();
+    const accountName = String(body.accountName || "").trim();
 
-    console.log(`[Payout] Request: affiliate=${affiliate.id}, amount=${amount}, method=${method}, dest=${accountNumber}`);
-
-    if (!amount || !method || !accountNumber) {
-      return NextResponse.json({ error: "Jumlah, metode, dan nomor akun wajib diisi" }, { status: 400 });
+    if (!Number.isInteger(points) || points <= 0) {
+      return NextResponse.json({ error: "Jumlah poin tidak valid" }, { status: 400 });
+    }
+    if (points < MIN_WITHDRAW_POINTS) {
+      return NextResponse.json({ error: `Minimum withdraw ${MIN_WITHDRAW_POINTS} poin (Rp ${pointsToRupiah(MIN_WITHDRAW_POINTS).toLocaleString("id-ID")})` }, { status: 400 });
+    }
+    if (points % POINTS_PER_NEW_CUSTOMER !== 0) {
+      return NextResponse.json({ error: `Jumlah withdraw harus kelipatan ${POINTS_PER_NEW_CUSTOMER} poin` }, { status: 400 });
+    }
+    if (points > MAX_WITHDRAW_POINTS) {
+      return NextResponse.json({ error: `Maksimum withdraw ${MAX_WITHDRAW_POINTS} poin` }, { status: 400 });
+    }
+    if (!METHODS.includes(method as typeof METHODS[number])) {
+      return NextResponse.json({ error: "Metode pembayaran tidak valid" }, { status: 400 });
+    }
+    if (accountNumber.length < 6 || accountNumber.length > 100) {
+      return NextResponse.json({ error: "Nomor rekening atau e-wallet tidak valid" }, { status: 400 });
     }
 
-    if (amount < MIN_PAYOUT) {
-      return NextResponse.json({ error: `Minimum payout Rp ${MIN_PAYOUT.toLocaleString("id-ID")}` }, { status: 400 });
-    }
+    const withdrawal = await prisma.$transaction(async (tx) => {
+      const activeWithdrawal = await tx.affiliateWithdrawal.findFirst({
+        where: { affiliateId: affiliate.id, status: { in: ["pending", "processing", "approved"] } },
+        select: { id: true },
+      });
+      if (activeWithdrawal) throw new Error("WITHDRAW_MASIH_DIPROSES");
 
-    if (amount > MAX_PAYOUT) {
-      return NextResponse.json({ error: `Maksimum payout Rp ${MAX_PAYOUT.toLocaleString("id-ID")}` }, { status: 400 });
-    }
+      const rows = await tx.$queryRaw<Array<{ id: string; points: number }>>`
+        SELECT id, points
+        FROM affiliate_point_ledger
+        WHERE affiliate_id = ${affiliate.id}::uuid
+          AND status = 'available'
+        ORDER BY created_at ASC
+        FOR UPDATE
+      `;
+      const availablePoints = rows.reduce((sum, row) => sum + row.points, 0);
+      if (availablePoints < points) throw new Error("POIN_TIDAK_CUKUP");
 
-    if (!["dana", "bank_transfer"].includes(method)) {
-      return NextResponse.json({ error: "Metode pembayaran tidak valid. Pilih DANA atau Transfer Bank." }, { status: 400 });
-    }
-
-    // Check balance
-    const aff = await prisma.affiliate.findUnique({
-      where: { id: affiliate.id },
-      select: { balance: true },
-    });
-
-    if (!aff || Number(aff.balance) < amount) {
-      return NextResponse.json({ error: "Saldo tidak mencukupi" }, { status: 400 });
-    }
-
-    // Check for pending/processing payout
-    const activePayout = await prisma.affiliateWithdrawal.findFirst({
-      where: {
-        affiliateId: affiliate.id,
-        status: { in: ["pending", "processing"] },
-      },
-    });
-
-    if (activePayout) {
-      return NextResponse.json({ error: "Masih ada permintaan payout yang sedang diproses. Tunggu sampai selesai." }, { status: 400 });
-    }
-
-    // Create withdrawal record
-    const methodLabel = method === "dana" ? "DANA" : "Transfer Bank";
-    const notes = `${methodLabel} - ${accountNumber}${accountName ? ` (${accountName})` : ""}`;
-
-    const withdrawal = await prisma.affiliateWithdrawal.create({
-      data: {
-        affiliateId: affiliate.id,
-        amount,
-        status: "pending",
-        notes,
-      },
-    });
-    console.log(`[Payout] Withdrawal created: ${withdrawal.id}`);
-
-    // Deduct balance immediately
-    await prisma.affiliate.update({
-      where: { id: affiliate.id },
-      data: {
-        balance: { decrement: amount },
-      },
-    });
-    console.log(`[Payout] Balance deducted: -${amount}`);
-
-    // ── DANA: Auto top-up via OrderKuota ────────────────────────────────
-    if (method === "dana") {
-      try {
-        const result = await topupDANA(accountNumber, amount, withdrawal.id);
-        console.log(`[Payout] OrderKuota result: success=${result.success}, raw=${result.raw}`);
-
-        if (result.success) {
-          // Transaction submitted successfully, waiting for callback
-          await prisma.affiliateWithdrawal.update({
-            where: { id: withdrawal.id },
-            data: {
-              status: "processing",
-              notes: notes + ` | OrderKuota: ${result.data?.trxid || "submitted"}`,
-            },
-          });
-
-          console.log(`[Payout] ✅ DANA top-up submitted, withdrawal=${withdrawal.id}`);
-
-          return NextResponse.json({
-            success: true,
-            message: "Top up DANA sedang diproses. Saldo akan masuk dalam beberapa menit.",
-            withdrawal: { ...withdrawal, status: "processing" },
-          });
-        } else {
-          console.log(`[Payout] ❌ OrderKuota failed: ${result.error || result.raw}`);
-
-          // API call failed — refund balance, mark as rejected
-          await prisma.affiliate.update({
-            where: { id: affiliate.id },
-            data: { balance: { increment: amount } },
-          });
-
-          await prisma.affiliateWithdrawal.update({
-            where: { id: withdrawal.id },
-            data: {
-              status: "rejected",
-              notes: notes + ` | Gagal: ${(result.error || result.raw || "Unknown error").substring(0, 200)}`,
-              processedAt: new Date(),
-            },
-          });
-
-          return NextResponse.json({
-            error: "Gagal memproses top up DANA. Saldo telah dikembalikan.",
-          }, { status: 500 });
-        }
-      } catch (apiError) {
-        console.error(`[Payout] ❌ Exception:`, apiError);
-
-        // Exception — refund balance
-        try {
-          await prisma.affiliate.update({
-            where: { id: affiliate.id },
-            data: { balance: { increment: amount } },
-          });
-
-          await prisma.affiliateWithdrawal.update({
-            where: { id: withdrawal.id },
-            data: {
-              status: "rejected",
-              notes: notes + ` | Error: ${String(apiError).substring(0, 200)}`,
-              processedAt: new Date(),
-            },
-          });
-        } catch (refundErr) {
-          console.error(`[Payout] ❌ Refund also failed:`, refundErr);
-        }
-
-        return NextResponse.json({
-          error: "Terjadi kesalahan saat memproses. Saldo telah dikembalikan.",
-        }, { status: 500 });
+      const selectedIds: string[] = [];
+      let selectedPoints = 0;
+      for (const row of rows) {
+        selectedIds.push(row.id);
+        selectedPoints += row.points;
+        if (selectedPoints >= points) break;
       }
-    }
 
-    // ── Bank Transfer: Manual (admin will process) ──────────────────────
+      const created = await tx.affiliateWithdrawal.create({
+        data: {
+          affiliateId: affiliate.id,
+          amount: pointsToRupiah(points),
+          points,
+          method,
+          accountNumber,
+          accountName: accountName || null,
+          status: "pending",
+          notes: `Withdraw mandiri ${points} poin (${POINTS_PER_NEW_CUSTOMER} poin per customer baru)`,
+        },
+      });
+
+      const held = await tx.affiliatePointLedger.updateMany({
+        where: { id: { in: selectedIds }, status: "available" },
+        data: { status: "held", withdrawalId: created.id },
+      });
+      if (held.count !== selectedIds.length) throw new Error("WITHDRAW_RETRY");
+
+      return created;
+    });
+
     return NextResponse.json({
       success: true,
-      message: "Permintaan transfer bank berhasil. Akan diproses admin dalam 1x24 jam.",
+      message: "Withdraw berhasil diajukan dan menunggu diproses admin.",
       withdrawal,
-    });
+    }, { status: 201 });
   } catch (error) {
-    console.error(`[Payout] ❌ Unhandled error:`, error);
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "WITHDRAW_MASIH_DIPROSES") {
+      return NextResponse.json({ error: "Masih ada pengajuan withdraw yang sedang diproses." }, { status: 409 });
+    }
+    if (message === "POIN_TIDAK_CUKUP") {
+      return NextResponse.json({ error: "Saldo poin tersedia tidak mencukupi." }, { status: 400 });
+    }
+    if (message === "WITHDRAW_RETRY") {
+      return NextResponse.json({ error: "Saldo berubah karena proses lain. Silakan coba lagi." }, { status: 409 });
+    }
+    console.error("POST /api/affiliate-portal/payout error:", error);
+    return NextResponse.json({ error: "Gagal membuat pengajuan withdraw" }, { status: 500 });
   }
 }
 
-// GET /api/affiliate-portal/payout — List payout history
 export async function GET(req: NextRequest) {
   const auth = await requireAffiliate();
   if ("error" in auth) return auth.error;
@@ -172,26 +117,40 @@ export async function GET(req: NextRequest) {
   try {
     const { affiliate } = auth;
     const { searchParams } = new URL(req.url);
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "20");
-
+    const page = Math.max(1, Number(searchParams.get("page") || 1));
+    const limit = Math.min(50, Math.max(1, Number(searchParams.get("limit") || 20)));
+    const where = { affiliateId: affiliate.id };
     const [withdrawals, total] = await Promise.all([
       prisma.affiliateWithdrawal.findMany({
-        where: { affiliateId: affiliate.id },
+        where,
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * limit,
         take: limit,
+        select: {
+          id: true,
+          points: true,
+          amount: true,
+          method: true,
+          accountNumber: true,
+          accountName: true,
+          payoutReference: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          processedAt: true,
+        },
       }),
-      prisma.affiliateWithdrawal.count({ where: { affiliateId: affiliate.id } }),
+      prisma.affiliateWithdrawal.count({ where }),
     ]);
 
     return NextResponse.json({
       withdrawals,
       total,
       page,
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.max(1, Math.ceil(total / limit)),
     });
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    console.error("GET /api/affiliate-portal/payout error:", error);
+    return NextResponse.json({ error: "Gagal mengambil histori withdraw" }, { status: 500 });
   }
 }

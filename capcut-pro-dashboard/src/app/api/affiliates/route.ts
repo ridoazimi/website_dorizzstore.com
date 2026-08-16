@@ -21,15 +21,38 @@ export async function GET(req: NextRequest) {
     }
     if (status) where.status = status;
 
-    const affiliates = await prisma.affiliate.findMany({
-      where,
-      include: {
-        _count: { select: { referredUsers: true, commissions: true, withdrawals: true } },
-      },
-      orderBy: { createdAt: "desc" },
+    const [affiliates, pointRows] = await Promise.all([
+      prisma.affiliate.findMany({
+        where,
+        include: {
+          _count: { select: { referredUsers: true, commissions: true, withdrawals: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.affiliatePointLedger.groupBy({
+        by: ["affiliateId", "status"],
+        where: { status: { in: ["available", "held"] } },
+        _sum: { points: true },
+      }),
+    ]);
+
+    const pointMap = new Map<string, { availablePoints: number; pendingPoints: number }>();
+    pointRows.forEach(row => {
+      const current = pointMap.get(row.affiliateId) || { availablePoints: 0, pendingPoints: 0 };
+      const points = Number(row._sum.points || 0);
+      if (row.status === "available") current.availablePoints += points;
+      if (row.status === "held") current.pendingPoints += Math.abs(points);
+      pointMap.set(row.affiliateId, current);
     });
 
-    return NextResponse.json({ affiliates });
+    return NextResponse.json({
+      affiliates: affiliates.map(member => ({
+        ...member,
+        availablePoints: pointMap.get(member.id)?.availablePoints || 0,
+        pendingPoints: pointMap.get(member.id)?.pendingPoints || 0,
+        availableRupiah: (pointMap.get(member.id)?.availablePoints || 0) * 1000,
+      })),
+    });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
@@ -52,7 +75,7 @@ export async function POST(req: NextRequest) {
         name,
         email: email || null,
         whatsapp: whatsapp || null,
-        commissionRate: commissionRate || 10.00,
+        commissionRate: commissionRate || 0,
       },
     });
 

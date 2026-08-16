@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { parseDuration, calcWarrantyExpiry } from "@/lib/duration";
 import { parseProductType } from "@/lib/product";
+import { creditReferralReward } from "@/lib/loyalty-points";
 
 // FIX #6: Gunakan shared parseProductType dari lib/product.ts (hapus definisi lokal)
 
@@ -61,9 +62,6 @@ export async function POST(req: NextRequest) {
 
     // Data affiliate dari payload Lynk.id
     const affiliateEmail = messageData.affiliate_email || null;
-    const affiliateCommissionAmount = messageData.totals?.affiliate
-      ? Math.abs(Number(messageData.totals.affiliate))
-      : 0;
 
     // Cek duplikat refId
     if (refId) {
@@ -196,7 +194,13 @@ export async function POST(req: NextRequest) {
       });
       if (updated.count === 0) throw new Error("SLOT_PENUH"); // Rollback jika race condition
 
-      return { account, transaction, purchaseDate, warrantyExpiredAt, newUsedSlots, accountMaxSlots };
+      const reward = await creditReferralReward(tx, {
+        affiliateId: user.referredBy,
+        userId: user.id,
+        transactionId: transaction.id,
+      });
+
+      return { account, transaction, purchaseDate, warrantyExpiredAt, newUsedSlots, accountMaxSlots, reward };
     });
 
     if (!txResult) {
@@ -219,46 +223,14 @@ export async function POST(req: NextRequest) {
     // Destructure hasil dari $transaction
     const { account, transaction, newUsedSlots, accountMaxSlots } = txResult;
 
-    // ===== 6. AFFILIATE KOMISI =====
-    // Komisi diberikan jika: user punya referredBy affiliate (baik order pertama maupun repeat)
-    const userAffiliateId = user.referredBy;
-    let commissionInfo = null;
-
-    if (userAffiliateId) {
-      const affiliate = await prisma.affiliate.findUnique({ where: { id: userAffiliateId } });
-      if (affiliate && affiliate.status === "active") {
-        // Komisi: ambil dari payload Lynk.id jika ada, atau hitung dari commission_rate
-        const commissionAmount = affiliateCommissionAmount > 0
-          ? affiliateCommissionAmount
-          : Math.round(price * Number(affiliate.commissionRate) / 100);
-
-        await prisma.affiliateCommission.create({
-          data: {
-            affiliateId: userAffiliateId,
-            transactionId: transaction.id,
-            userId: user.id,
-            amount: commissionAmount,
-            transactionAmount: price,
-          },
-        });
-
-        // Update saldo & total earned affiliate
-        await prisma.affiliate.update({
-          where: { id: userAffiliateId },
-          data: {
-            balance: { increment: commissionAmount },
-            totalEarned: { increment: commissionAmount },
-          },
-        });
-
-        commissionInfo = {
-          affiliateEmail: affiliate.email,
-          affiliateName: affiliate.name,
-          commission: commissionAmount,
-          isRepeatOrder: !isNewUser,
-        };
-      }
-    }
+    // ===== 6. LOYALTY MEMBER REWARD =====
+    const commissionInfo = txResult.reward.credited
+      ? {
+          points: txResult.reward.points,
+          rupiah: txResult.reward.points * 1000,
+          isNewCustomer: isNewUser,
+        }
+      : null;
 
     // ===== 7. Log pesan =====
     await prisma.messageLog.create({

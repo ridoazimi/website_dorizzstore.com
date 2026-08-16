@@ -54,3 +54,21 @@ Contoh payload:
 Endpoint lama `POST /api/stock/allocate` tetap tersedia untuk kompatibilitas bot yang sudah terpasang, tetapi sekarang juga membuat transaksi `shopee-whatsapp` dan mencatat customer pada akun stok. Kedua endpoint menggunakan `orderId` sebagai kunci idempotensi, sehingga retry order yang sama tidak mengonsumsi slot tambahan. Jalankan `stock_allocation_migration.sql` pada database yang belum memiliki tabel `stock_allocations` sebelum menggunakan endpoint tersebut.
 
 Setiap alokasi yang berhasil harus menghasilkan satu transaksi sukses yang terhubung ke `stockAccountId` dan menaikkan `usedSlots` dalam transaksi database yang sama. Page stock juga merekonsiliasi counter dengan transaksi sukses dan alokasi legacy agar customer dari website dan Shopee dihitung bersama.
+
+## Dorizz Loyalty Member
+
+Halaman `/affiliate` sekarang menjadi portal member Loyalty. Satu customer baru dengan transaksi sukses memberikan `3 poin`, dan setiap poin bernilai `Rp1.000`. Member dapat memakai link referral umum `/r/{inviteToken}`. Kode referral disimpan sementara di cookie agar customer dapat memilih produk terlebih dahulu.
+
+Referral hanya valid untuk customer yang belum ada di database Dorizz berdasarkan email atau nomor WhatsApp yang dinormalisasi. Jika customer lama mencoba melanjutkan checkout dari referral, server mengembalikan status `409` dengan kode `EXISTING_CUSTOMER`; UI menampilkan peringatan dan mengarahkan customer ke checkout general sambil menghapus cookie referral.
+
+Member mengajukan withdraw sendiri dari `/affiliate/payout`. Minimum withdraw adalah `30 poin` atau `Rp30.000`, jumlah harus kelipatan 3, dan satu member hanya boleh memiliki satu pengajuan aktif. Poin dikunci menjadi status `held` saat pengajuan dibuat. Admin memproses pengajuan dari `/affiliates`; status `rejected` mengembalikan poin menjadi `available`, sedangkan status `paid` mengubahnya menjadi `spent`.
+
+Jalankan migration berikut sebelum deploy fitur Loyalty Member ke environment yang memakai database lama:
+
+```bash
+psql "$DIRECT_URL" -f loyalty_member_migration.sql
+```
+
+Migration menambahkan field tujuan pembayaran pada `affiliate_withdrawals` dan membuat tabel `affiliate_point_ledger` beserta index idempotensi reward. Pastikan migration selesai sebelum member menerima reward pertama.
+
+Member dan admin memakai autentikasi portal yang sudah tersedia. Environment production tidak memerlukan secret baru untuk reward karena proses reward berjalan di dalam webhook pembayaran yang sudah ada. Pastikan webhook Lynk.id/payment-success telah terhubung dan setiap transaksi sukses menyimpan `userId` serta `referredBy` dengan benar.

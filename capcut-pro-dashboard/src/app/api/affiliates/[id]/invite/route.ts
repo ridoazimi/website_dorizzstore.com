@@ -20,10 +20,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: "Affiliate tidak ditemukan" }, { status: 404 });
     }
 
-    if (affiliate.password) {
-      return NextResponse.json({ error: "Affiliate sudah punya password. Tidak perlu invite link lagi." }, { status: 400 });
-    }
-
     // Generate or reuse existing invite token
     let inviteToken = affiliate.inviteToken;
     if (!inviteToken) {
@@ -36,11 +32,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Build invite URL
     const baseUrl = req.headers.get("origin") || process.env.NEXT_PUBLIC_BASE_URL || "https://doriz.store";
-    const inviteUrl = `${baseUrl}/affiliate/setup?token=${inviteToken}`;
+    const setupUrl = `${baseUrl}/affiliate/setup?token=${inviteToken}`;
+    const referralUrl = `${baseUrl}/r/${inviteToken}`;
 
     return NextResponse.json({
       success: true,
-      inviteUrl,
+      // inviteUrl remains the setup URL for backwards compatibility.
+      inviteUrl: setupUrl,
+      setupUrl,
+      referralUrl,
       inviteToken,
       affiliateName: affiliate.name,
     });
