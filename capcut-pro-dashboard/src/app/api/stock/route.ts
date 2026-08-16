@@ -29,50 +29,64 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    if (status && status !== "all" && status !== "Semua") where.status = status;
+    if (status && status !== "all" && status !== "Semua") {
+      if (status === "sold" || status === "full") {
+        where.status = { in: ["sold", "full"] };
+      } else {
+        where.status = status;
+      }
+    }
     if (productId && productId !== "all" && productId !== "Semua") {
       where.productId = productId;
     } else if (productType && productType !== "all" && productType !== "Semua") {
-      where.product = { maxSlots: productType === "desktop" ? 2 : 3 };
+      where.OR = [
+        { productType: productType },
+        { product: { maxSlots: productType === "desktop" ? 2 : 3 } }
+      ];
     }
     if (usageType && usageType !== "all" && usageType !== "Semua") {
       where.usageType = usageType;
     }
 
     type ActualUsageRow = { id: string; used_slots: number };
-    const actualUsageRows = await prisma.$queryRaw<ActualUsageRow[]>`
-      SELECT
-        sa.id,
-        GREATEST(
-          COALESCE(sa.used_slots, 0),
-          COALESCE(success_usage.transaction_count, 0)
-            + COALESCE(legacy_usage.allocation_count, 0)
-        )::int AS used_slots
-      FROM stock_accounts sa
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS transaction_count
-        FROM transactions t
-        WHERE t.stock_account_id = sa.id
-          AND t.status = 'success'
-      ) success_usage ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS allocation_count
-        FROM stock_allocations a
-        WHERE a.stock_account_id = sa.id
-          AND a.status = 'active'
-          AND NOT EXISTS (
-            SELECT 1
-            FROM transactions t
-            WHERE t.stock_account_id = a.stock_account_id
-              AND t.status = 'success'
-              AND t.lynk_id_ref = CASE
-                WHEN a.order_id IS NULL THEN NULL
-                ELSE 'shopee:' || a.order_id
-              END
-          )
-      ) legacy_usage ON TRUE
-    `;
-    const actualUsageById = new Map(actualUsageRows.map(row => [row.id, row.used_slots]));
+    let actualUsageById = new Map<string, number>();
+    try {
+      const actualUsageRows = await prisma.$queryRaw<ActualUsageRow[]>`
+        SELECT
+          sa.id,
+          GREATEST(
+            COALESCE(sa.used_slots, 0),
+            COALESCE(success_usage.transaction_count, 0)
+              + COALESCE(legacy_usage.allocation_count, 0)
+          )::int AS used_slots
+        FROM stock_accounts sa
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS transaction_count
+          FROM transactions t
+          WHERE t.stock_account_id = sa.id
+            AND t.status = 'success'
+        ) success_usage ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS allocation_count
+          FROM stock_allocations a
+          WHERE a.stock_account_id = sa.id
+            AND a.status = 'active'
+            AND NOT EXISTS (
+              SELECT 1
+              FROM transactions t
+              WHERE t.stock_account_id = a.stock_account_id
+                AND t.status = 'success'
+                AND t.lynk_id_ref = CASE
+                  WHEN a.order_id IS NULL THEN NULL
+                  ELSE 'shopee:' || a.order_id
+                END
+            )
+        ) legacy_usage ON TRUE
+      `;
+      actualUsageById = new Map(actualUsageRows.map(row => [row.id, row.used_slots]));
+    } catch (rawQueryErr) {
+      console.warn("[stock] $queryRaw actual usage check skipped/failed, using fallback:", rawQueryErr);
+    }
 
     // ── Fetch semua data yang diperlukan ─────────────────────────────────────
     // ── Fetch paginated list ────────────────────────────────────────────────
@@ -101,10 +115,23 @@ export async function GET(req: NextRequest) {
       }),
       prisma.stockAccount.count({ where }),
     ]);
-    const accountsWithActualUsage = accounts.map(account => ({
-      ...account,
-      usedSlots: actualUsageById.get(account.id) ?? account.usedSlots ?? 0,
-    }));
+
+    // Debug logging for server side data retrieval (Requirement 4)
+    console.log("Fetched Stock Count:", accounts.length);
+
+    const accountsWithActualUsage = accounts.map(account => {
+      const raw = account as any;
+      return {
+        ...account,
+        accountEmail: account.accountEmail ?? raw.account_email ?? "",
+        accountPassword: account.accountPassword ?? raw.account_password ?? "",
+        durationDays: account.durationDays ?? raw.duration_days ?? 30,
+        maxSlots: account.maxSlots ?? raw.max_slots ?? 3,
+        usedSlots: actualUsageById.get(account.id) ?? account.usedSlots ?? raw.used_slots ?? 0,
+        productType: account.productType ?? raw.product_type ?? "mobile",
+        usageType: account.usageType ?? raw.usage_type ?? "sale",
+      };
+    });
 
     // ── Fetch all accounts for stats (Trigger reload) ───────────────────────
     const allAccounts = await prisma.stockAccount.findMany({

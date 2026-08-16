@@ -351,7 +351,21 @@ export default function StockPage() {
     fetch(`/api/stock?${params}`)
       .then((res) => res.json())
       .then((json) => {
-        const newAccounts: StockItem[] = json.accounts || [];
+        if (json.error) {
+          console.error("[stock] API returned error:", json.error);
+        }
+        const rawAccounts = json.accounts || [];
+        const newAccounts: StockItem[] = rawAccounts.map((item: any) => ({
+          ...item,
+          accountEmail: item.accountEmail ?? item.account_email ?? "",
+          accountPassword: item.accountPassword ?? item.account_password ?? "",
+          durationDays: item.durationDays ?? item.duration_days ?? 30,
+          maxSlots: item.maxSlots ?? item.max_slots ?? 3,
+          usedSlots: item.usedSlots ?? item.used_slots ?? 0,
+          productType: item.productType ?? item.product_type ?? "mobile",
+          usageType: item.usageType ?? item.usage_type ?? "sale",
+          transactions: item.transactions || [],
+        }));
         if (append) {
           setAccounts(prev => [...prev, ...newAccounts]);
         } else {
