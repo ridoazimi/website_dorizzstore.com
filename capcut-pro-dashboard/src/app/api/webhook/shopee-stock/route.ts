@@ -1,20 +1,46 @@
+import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { allocateShopeeStock } from "@/lib/shopee-stock-allocation";
 
+export const runtime = "nodejs";
+
+function isAuthorized(req: NextRequest) {
+  const expected = process.env.SHOPEE_STOCK_WEBHOOK_SECRET;
+  const received = req.headers.get("x-webhook-secret");
+
+  if (!expected || !received) return false;
+
+  const expectedBuffer = Buffer.from(expected);
+  const receivedBuffer = Buffer.from(received);
+  return expectedBuffer.length === receivedBuffer.length
+    && timingSafeEqual(expectedBuffer, receivedBuffer);
+}
+
 /**
- * Legacy compatibility endpoint for existing WhatsApp bot integrations.
- * New integrations should use /api/webhook/shopee-stock with a webhook secret.
+ * POST /api/webhook/shopee-stock
+ *
+ * Reserves one stock slot for a Shopee/WhatsApp order before returning the
+ * account credentials. The Shopee order id is used as an idempotency key.
  */
 export async function POST(req: NextRequest) {
+  if (!process.env.SHOPEE_STOCK_WEBHOOK_SECRET) {
+    console.error("[Shopee Stock] SHOPEE_STOCK_WEBHOOK_SECRET is not configured");
+    return NextResponse.json({ error: "Webhook belum dikonfigurasi" }, { status: 503 });
+  }
+
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const result = await allocateShopeeStock(prisma, {
       orderId: body.orderId,
-      customerId: body.customerId,
       customerName: body.customerName,
-      customerWhatsapp: body.customerWhatsapp || body.whatsapp,
+      customerWhatsapp: body.customerWhatsapp,
       customerEmail: body.customerEmail,
+      customerId: body.customerId,
       productId: body.productId,
       productName: body.productName,
       productType: body.productType,
@@ -25,6 +51,8 @@ export async function POST(req: NextRequest) {
       success: true,
       allocated: result.allocated,
       transactionId: result.transactionId,
+      orderId: String(body.orderId).trim(),
+      product: result.productName,
       account: {
         email: result.account.accountEmail,
         password: result.account.accountPassword,
@@ -40,7 +68,13 @@ export async function POST(req: NextRequest) {
 
     if (message === "STOK_KOSONG") {
       return NextResponse.json(
-        { error: "Stok akun dengan slot tersedia tidak ditemukan" },
+        { error: "Stok akun untuk produk ini kosong atau seluruh slot sudah penuh" },
+        { status: 409 },
+      );
+    }
+    if (message === "ORDER_TANPA_STOK") {
+      return NextResponse.json(
+        { error: "Order ini sudah tercatat tetapi belum memiliki akun stok" },
         { status: 409 },
       );
     }
@@ -57,7 +91,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Customer tidak ditemukan" }, { status: 404 });
     }
 
-    console.error("Stock allocation error", error);
-    return NextResponse.json({ error: "Gagal mengambil stok akun" }, { status: 500 });
+    console.error("[Shopee Stock] Allocation error:", error);
+    return NextResponse.json({ error: "Gagal mengalokasikan akun" }, { status: 500 });
   }
 }

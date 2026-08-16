@@ -39,6 +39,41 @@ export async function GET(req: NextRequest) {
       where.usageType = usageType;
     }
 
+    type ActualUsageRow = { id: string; used_slots: number };
+    const actualUsageRows = await prisma.$queryRaw<ActualUsageRow[]>`
+      SELECT
+        sa.id,
+        GREATEST(
+          COALESCE(sa.used_slots, 0),
+          COALESCE(success_usage.transaction_count, 0)
+            + COALESCE(legacy_usage.allocation_count, 0)
+        )::int AS used_slots
+      FROM stock_accounts sa
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS transaction_count
+        FROM transactions t
+        WHERE t.stock_account_id = sa.id
+          AND t.status = 'success'
+      ) success_usage ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS allocation_count
+        FROM stock_allocations a
+        WHERE a.stock_account_id = sa.id
+          AND a.status = 'active'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM transactions t
+            WHERE t.stock_account_id = a.stock_account_id
+              AND t.status = 'success'
+              AND t.lynk_id_ref = CASE
+                WHEN a.order_id IS NULL THEN NULL
+                ELSE 'shopee:' || a.order_id
+              END
+          )
+      ) legacy_usage ON TRUE
+    `;
+    const actualUsageById = new Map(actualUsageRows.map(row => [row.id, row.used_slots]));
+
     // ── Fetch semua data yang diperlukan ─────────────────────────────────────
     // ── Fetch paginated list ────────────────────────────────────────────────
     const [accounts, total] = await Promise.all([
@@ -66,6 +101,10 @@ export async function GET(req: NextRequest) {
       }),
       prisma.stockAccount.count({ where }),
     ]);
+    const accountsWithActualUsage = accounts.map(account => ({
+      ...account,
+      usedSlots: actualUsageById.get(account.id) ?? account.usedSlots ?? 0,
+    }));
 
     // ── Fetch all accounts for stats (Trigger reload) ───────────────────────
     const allAccounts = await prisma.stockAccount.findMany({
@@ -80,10 +119,14 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    const mobileAccounts = allAccounts.filter(a => a.productType === "mobile");
-    const desktopAccounts = allAccounts.filter(a => a.productType === "desktop");
-    const saleAccounts = allAccounts.filter(a => a.usageType === "sale");
-    const warrantyAccounts = allAccounts.filter(a => a.usageType === "warranty");
+    const allAccountsWithActualUsage = allAccounts.map(account => ({
+      ...account,
+      usedSlots: actualUsageById.get(account.id) ?? account.usedSlots ?? 0,
+    }));
+    const mobileAccounts = allAccountsWithActualUsage.filter(a => a.productType === "mobile");
+    const desktopAccounts = allAccountsWithActualUsage.filter(a => a.productType === "desktop");
+    const saleAccounts = allAccountsWithActualUsage.filter(a => a.usageType === "sale");
+    const warrantyAccounts = allAccountsWithActualUsage.filter(a => a.usageType === "warranty");
 
     // ── Helper: hitung status berdasarkan usedSlots vs maxSlots ──
     function effectiveStatus(acc: { status: string | null; usedSlots: number | null; maxSlots: number | null; product?: { maxSlots: number | null } | null }, defaultMax: number) {
@@ -167,7 +210,7 @@ export async function GET(req: NextRequest) {
       .filter(acc => effectiveStatus(acc, 3) === "available")
       .reduce((sum, acc) => sum + Math.max(0, (acc.maxSlots ?? 3) - (acc.usedSlots ?? 0)), 0);
 
-    const accountsWithRemainingDuration = accounts.map((account) => ({
+    const accountsWithRemainingDuration = accountsWithActualUsage.map((account) => ({
       ...account,
       durationDays: getRemainingStockDays(account.durationDays, account.createdAt),
     }));
@@ -231,7 +274,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await prisma.stockAccount.createMany({
-      data: data as any
+      data,
     });
 
     if (productId) {
@@ -239,11 +282,15 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ created: result.count }, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("POST /api/stock error:", error);
-    if (error.code === 'P2002') {
+    const errorCode = typeof error === "object" && error !== null && "code" in error
+      ? String(error.code)
+      : undefined;
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    if (errorCode === "P2002") {
       return NextResponse.json({ error: "Email akun sudah terdaftar di sistem." }, { status: 400 });
     }
-    return NextResponse.json({ error: "Gagal menambahkan stok: " + (error.message || "Unknown error") }, { status: 500 });
+    return NextResponse.json({ error: "Gagal menambahkan stok: " + errorMessage }, { status: 500 });
   }
 }
