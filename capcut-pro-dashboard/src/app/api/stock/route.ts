@@ -25,11 +25,20 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    if (status && status !== "all" && status !== "Semua") where.status = status;
+    if (status && status !== "all" && status !== "Semua") {
+      if (status === "sold" || status === "full") {
+        where.status = { in: ["sold", "full"] };
+      } else {
+        where.status = status;
+      }
+    }
     if (productId && productId !== "all" && productId !== "Semua") {
       where.productId = productId;
     } else if (productType && productType !== "all" && productType !== "Semua") {
-      where.product = { maxSlots: productType === "desktop" ? 2 : 3 };
+      where.OR = [
+        { productType },
+        { product: { maxSlots: productType === "desktop" ? 2 : 3 } },
+      ];
     }
     if (usageType && usageType !== "all" && usageType !== "Semua") {
       where.usageType = usageType;
@@ -63,7 +72,23 @@ export async function GET(req: NextRequest) {
       prisma.stockAccount.count({ where }),
     ]);
 
-    // ── Fetch all accounts for stats (Trigger reload) ───────────────────────
+    // Preserve GreenAppl3's defensive stock response mapping without
+    // reintroducing the rolled-back stock_allocations reconciliation.
+    const mappedAccounts = accounts.map((account) => {
+      const raw = account as any;
+      return {
+        ...account,
+        accountEmail: account.accountEmail ?? raw.account_email ?? "",
+        accountPassword: account.accountPassword ?? raw.account_password ?? "",
+        durationDays: account.durationDays ?? raw.duration_days ?? 30,
+        maxSlots: account.maxSlots ?? raw.max_slots ?? 3,
+        usedSlots: account.usedSlots ?? raw.used_slots ?? 0,
+        productType: account.productType ?? raw.product_type ?? "mobile",
+        usageType: account.usageType ?? raw.usage_type ?? "sale",
+      };
+    });
+
+    // ── Fetch all accounts for stats (Trigger reload) ────────────────────────
     const allAccounts = await prisma.stockAccount.findMany({
       select: {
         id: true,
@@ -164,7 +189,7 @@ export async function GET(req: NextRequest) {
       .reduce((sum, acc) => sum + Math.max(0, (acc.maxSlots ?? 3) - (acc.usedSlots ?? 0)), 0);
 
     return NextResponse.json({
-      accounts, total, page, limit,
+      accounts: mappedAccounts, total, page, limit,
       statusCounts,
       mobileStatusCounts, mobileTotal: mobileAccounts.length,
       desktopStatusCounts, desktopTotal: desktopAccounts.length,
