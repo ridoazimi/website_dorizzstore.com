@@ -111,7 +111,6 @@ export default async function MarketplacePage() {
                   const isNewProduct = product.createdAt
                     ? (new Date().getTime() - new Date(product.createdAt).getTime()) <= 30 * 24 * 60 * 60 * 1000
                     : false;
-                  const soldCount = product.soldCount ?? product._count?.transactions ?? 0;
                   const hasDiscount = Boolean(product.discountPercentage && product.discountPercentage > 0);
                   const discountedPrice = hasDiscount
                     ? Number(product.price) * (1 - product.discountPercentage / 100)
@@ -176,9 +175,6 @@ export default async function MarketplacePage() {
                           {product.name}
                         </h3>
                         <div className="mt-auto">
-                          <p className={`text-[10px] font-bold mb-1 ${isOutOfStock ? 'text-red-400' : isPreOrder ? 'text-amber-500' : 'text-emerald-500'}`}>
-                            Terjual: {soldCount}
-                          </p>
                           <p className={`text-[10px] font-bold mb-1 ${isOutOfStock ? 'text-red-400' : isPreOrder ? 'text-amber-500' : 'text-emerald-500'}`}>
                             {isOutOfStock ? '❌ Stok Habis' : isPreOrder ? '⚡ Pre-order: 1-24 Jam' : `Tersedia: ${product.availableStock} Slot`}
                           </p>
