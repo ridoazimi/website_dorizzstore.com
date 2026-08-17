@@ -36,12 +36,12 @@ export default function LayoutWrapper({ children }: { children: ReactNode }) {
     );
   }
 
-  // Admin dashboard — existing layout
+  // Admin dashboard — visual redesign is scoped here so public pages stay untouched.
   return (
     <AuthProvider>
       <MobileNavProvider>
         <PrivacyProvider>
-          <div className="flex min-h-screen">
+          <div className="admin-shell flex min-h-screen">
             <Sidebar />
             <BulkTransactionLauncher />
             <main className="flex-1 lg:ml-[260px] ml-0 min-h-screen min-w-0">

@@ -1,10 +1,6 @@
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
-import {
-  getRemainingStockDays,
-  syncProductDurationsFromAvailableStock,
-} from "@/lib/product-duration";
 
 // GET /api/stock - Ambil semua stok akun dengan filter
 export async function GET(req: NextRequest) {
@@ -29,63 +25,14 @@ export async function GET(req: NextRequest) {
       ];
     }
 
-    if (status && status !== "all" && status !== "Semua") {
-      if (status === "sold" || status === "full") {
-        where.status = { in: ["sold", "full"] };
-      } else {
-        where.status = status;
-      }
-    }
+    if (status && status !== "all" && status !== "Semua") where.status = status;
     if (productId && productId !== "all" && productId !== "Semua") {
       where.productId = productId;
     } else if (productType && productType !== "all" && productType !== "Semua") {
-      where.OR = [
-        { productType: productType },
-        { product: { maxSlots: productType === "desktop" ? 2 : 3 } }
-      ];
+      where.product = { maxSlots: productType === "desktop" ? 2 : 3 };
     }
     if (usageType && usageType !== "all" && usageType !== "Semua") {
       where.usageType = usageType;
-    }
-
-    type ActualUsageRow = { id: string; used_slots: number };
-    let actualUsageById = new Map<string, number>();
-    try {
-      const actualUsageRows = await prisma.$queryRaw<ActualUsageRow[]>`
-        SELECT
-          sa.id,
-          GREATEST(
-            COALESCE(sa.used_slots, 0),
-            COALESCE(success_usage.transaction_count, 0)
-              + COALESCE(legacy_usage.allocation_count, 0)
-          )::int AS used_slots
-        FROM stock_accounts sa
-        LEFT JOIN LATERAL (
-          SELECT COUNT(*)::int AS transaction_count
-          FROM transactions t
-          WHERE t.stock_account_id = sa.id
-            AND t.status = 'success'
-        ) success_usage ON TRUE
-        LEFT JOIN LATERAL (
-          SELECT COUNT(*)::int AS allocation_count
-          FROM stock_allocations a
-          WHERE a.stock_account_id = sa.id
-            AND a.status = 'active'
-            AND NOT EXISTS (
-              SELECT 1
-              FROM transactions t
-              WHERE t.stock_account_id = a.stock_account_id
-                AND t.status = 'success'
-                AND t.lynk_id_ref = CASE
-                  WHEN a.order_id IS NULL THEN NULL
-                  ELSE 'shopee:' || a.order_id
-                END
-            )
-        ) legacy_usage ON TRUE
-      `;
-      actualUsageById = new Map(actualUsageRows.map(row => [row.id, row.used_slots]));
-    } catch (rawQueryErr) {
-      console.warn("[stock] $queryRaw actual usage check skipped/failed, using fallback:", rawQueryErr);
     }
 
     // ── Fetch semua data yang diperlukan ─────────────────────────────────────
@@ -116,23 +63,6 @@ export async function GET(req: NextRequest) {
       prisma.stockAccount.count({ where }),
     ]);
 
-    // Debug logging for server side data retrieval (Requirement 4)
-    console.log("Fetched Stock Count:", accounts.length);
-
-    const accountsWithActualUsage = accounts.map(account => {
-      const raw = account as any;
-      return {
-        ...account,
-        accountEmail: account.accountEmail ?? raw.account_email ?? "",
-        accountPassword: account.accountPassword ?? raw.account_password ?? "",
-        durationDays: account.durationDays ?? raw.duration_days ?? 30,
-        maxSlots: account.maxSlots ?? raw.max_slots ?? 3,
-        usedSlots: actualUsageById.get(account.id) ?? account.usedSlots ?? raw.used_slots ?? 0,
-        productType: account.productType ?? raw.product_type ?? "mobile",
-        usageType: account.usageType ?? raw.usage_type ?? "sale",
-      };
-    });
-
     // ── Fetch all accounts for stats (Trigger reload) ───────────────────────
     const allAccounts = await prisma.stockAccount.findMany({
       select: {
@@ -146,14 +76,10 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    const allAccountsWithActualUsage = allAccounts.map(account => ({
-      ...account,
-      usedSlots: actualUsageById.get(account.id) ?? account.usedSlots ?? 0,
-    }));
-    const mobileAccounts = allAccountsWithActualUsage.filter(a => a.productType === "mobile");
-    const desktopAccounts = allAccountsWithActualUsage.filter(a => a.productType === "desktop");
-    const saleAccounts = allAccountsWithActualUsage.filter(a => a.usageType === "sale");
-    const warrantyAccounts = allAccountsWithActualUsage.filter(a => a.usageType === "warranty");
+    const mobileAccounts = allAccounts.filter(a => a.productType === "mobile");
+    const desktopAccounts = allAccounts.filter(a => a.productType === "desktop");
+    const saleAccounts = allAccounts.filter(a => a.usageType === "sale");
+    const warrantyAccounts = allAccounts.filter(a => a.usageType === "warranty");
 
     // ── Helper: hitung status berdasarkan usedSlots vs maxSlots ──
     function effectiveStatus(acc: { status: string | null; usedSlots: number | null; maxSlots: number | null; product?: { maxSlots: number | null } | null }, defaultMax: number) {
@@ -237,13 +163,8 @@ export async function GET(req: NextRequest) {
       .filter(acc => effectiveStatus(acc, 3) === "available")
       .reduce((sum, acc) => sum + Math.max(0, (acc.maxSlots ?? 3) - (acc.usedSlots ?? 0)), 0);
 
-    const accountsWithRemainingDuration = accountsWithActualUsage.map((account) => ({
-      ...account,
-      durationDays: getRemainingStockDays(account.durationDays, account.createdAt),
-    }));
-
     return NextResponse.json({
-      accounts: accountsWithRemainingDuration, total, page, limit,
+      accounts, total, page, limit,
       statusCounts,
       mobileStatusCounts, mobileTotal: mobileAccounts.length,
       desktopStatusCounts, desktopTotal: desktopAccounts.length,
@@ -301,23 +222,15 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await prisma.stockAccount.createMany({
-      data,
+      data: data as any
     });
 
-    if (productId) {
-      await syncProductDurationsFromAvailableStock([productId]);
-    }
-
     return NextResponse.json({ created: result.count }, { status: 201 });
-  } catch (error: unknown) {
+  } catch (error: any) {
     console.error("POST /api/stock error:", error);
-    const errorCode = typeof error === "object" && error !== null && "code" in error
-      ? String(error.code)
-      : undefined;
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    if (errorCode === "P2002") {
+    if (error.code === 'P2002') {
       return NextResponse.json({ error: "Email akun sudah terdaftar di sistem." }, { status: 400 });
     }
-    return NextResponse.json({ error: "Gagal menambahkan stok: " + errorMessage }, { status: 500 });
+    return NextResponse.json({ error: "Gagal menambahkan stok: " + (error.message || "Unknown error") }, { status: 500 });
   }
 }

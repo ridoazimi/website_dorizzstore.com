@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./admin-redesign.css";
 import LayoutWrapper from "@/components/LayoutWrapper";
 import { ThemeProvider } from "@/context/ThemeContext";
 import SalesTracker from "@/components/SalesTracker";

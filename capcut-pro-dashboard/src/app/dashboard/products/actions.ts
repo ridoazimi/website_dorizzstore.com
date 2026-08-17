@@ -5,11 +5,6 @@ import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/auth";
 import { uploadImage } from "@/lib/upload";
-import {
-  applyDurationToProductFields,
-  getElapsedStockDays,
-  syncProductDurationsFromAvailableStock,
-} from "@/lib/product-duration";
 
 export type ReorderProductItem = { id: string; sortOrder: number };
 
@@ -27,10 +22,6 @@ function isValidReorderItem(item: unknown): item is ReorderProductItem {
 
 export async function getProducts(activeOnly: boolean = false, take?: number) {
   try {
-    // The first catalog/admin read after midnight WIB refreshes product copy
-    // from the remaining duration of available stock.
-    await syncProductDurationsFromAvailableStock();
-
     // Order by sortOrder ascending to respect admin panel drag-and-drop order
     // Filter to only show active products when activeOnly is true
     const products = await prisma.product.findMany({
@@ -132,11 +123,6 @@ export async function createProduct(formData: FormData) {
       }
     }
 
-    const syncedFields = applyDurationToProductFields(
-      { name, slug, category, description, rules, messageTemplate },
-      duration,
-    );
-
     // Get highest sortOrder to place new product at the end
     const maxOrder = await prisma.product.aggregate({
       _max: { sortOrder: true },
@@ -145,19 +131,19 @@ export async function createProduct(formData: FormData) {
 
     const product = await prisma.product.create({
       data: {
-        name: syncedFields.name,
-        slug: syncedFields.slug,
-        description: syncedFields.description,
+        name,
+        slug,
+        description,
         price,
         discountPercentage: isNaN(discountPercentage) ? 0 : discountPercentage,
-        category: syncedFields.category,
+        category,
         maxSlots,
-        duration: syncedFields.duration,
+        duration,
         imageUrl,
         isActive,
         stockStatus: formData.get("stockStatus") as string || "INTEGRATED",
-        rules: syncedFields.rules,
-        messageTemplate: syncedFields.messageTemplate,
+        rules,
+        messageTemplate,
         sortOrder: nextSortOrder,
       },
     });
@@ -203,59 +189,24 @@ export async function updateProduct(id: string, formData: FormData) {
       }
     }
 
-    const previousProduct = await prisma.product.findUnique({
-      where: { id },
-      select: { duration: true },
-    });
-
-    const syncedFields = applyDurationToProductFields(
-      { name, slug, category, description, rules, messageTemplate },
-      duration,
-    );
-
     const product = await prisma.product.update({
       where: { id },
       data: {
-        name: syncedFields.name,
-        slug: syncedFields.slug,
-        description: syncedFields.description,
+        name,
+        slug,
+        description,
         price,
         discountPercentage: isNaN(discountPercentage) ? 0 : discountPercentage,
-        category: syncedFields.category,
+        category,
         maxSlots,
-        duration: syncedFields.duration,
+        duration,
         ...(imageUrl ? { imageUrl } : {}), // Only update if new image uploaded
         isActive,
         stockStatus: formData.get("stockStatus") as string || "INTEGRATED",
-        rules: syncedFields.rules,
-        messageTemplate: syncedFields.messageTemplate,
+        rules,
+        messageTemplate,
       },
     });
-    if (previousProduct?.duration !== duration) {
-      const availableStocks = await prisma.stockAccount.findMany({
-        where: {
-          productId: id,
-          status: "available",
-        },
-        select: { id: true, createdAt: true },
-      });
-
-      if (availableStocks.length > 0) {
-        await prisma.$transaction(
-          availableStocks.map((stock) =>
-            prisma.stockAccount.update({
-              where: { id: stock.id },
-              data: {
-                // Keep createdAt intact while making the effective remaining
-                // duration equal to the admin's selected value today.
-                durationDays: duration + getElapsedStockDays(stock.createdAt),
-              },
-            }),
-          ),
-        );
-      }
-    }
-
     revalidatePath("/dashboard/products");
     revalidatePath("/");
     return product;
