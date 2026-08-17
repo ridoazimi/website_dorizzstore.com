@@ -3,14 +3,12 @@
 import { useState, useEffect } from "react";
 import RichTextEditor from "@/components/RichTextEditor";
 import Topbar from "@/components/Topbar";
-import { 
-  Package, 
-  Plus, 
-  Search, 
-  Edit2, 
-  Trash2, 
-  MoreVertical, 
-  Check, 
+import {
+  Package,
+  Plus,
+  Search,
+  Edit2,
+  Trash2,
   X,
   Loader2,
   Image as ImageIcon,
@@ -18,10 +16,10 @@ import {
   GripVertical
 } from "lucide-react";
 import Image from "next/image";
-import { 
-  getProducts, 
-  createProduct, 
-  updateProduct, 
+import {
+  getProducts,
+  createProduct,
+  updateProduct,
   deleteProduct,
   reorderProducts
 } from "./actions";
@@ -47,8 +45,6 @@ interface Product {
   createdAt?: string | Date | null;
 }
 
-
-
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +57,6 @@ export default function ProductsPage() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [savingOrder, setSavingOrder] = useState(false);
 
-  // Form state
   const [formData, setFormData] = useState({
     name: "",
     slug: "",
@@ -78,7 +73,6 @@ export default function ProductsPage() {
     messageTemplate: ""
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
-
 
   useEffect(() => {
     fetchProducts();
@@ -117,7 +111,6 @@ export default function ProductsPage() {
         rules: product.rules || "",
         messageTemplate: product.messageTemplate || ""
       });
-
     } else {
       setEditingProduct(null);
       setFormData({
@@ -135,14 +128,13 @@ export default function ProductsPage() {
         rules: "",
         messageTemplate: ""
       });
-
     }
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const discountVal = Number(formData.discountPercentage);
     if (isNaN(discountVal) || discountVal < 0 || discountVal > 100) {
       alert("Diskon (%) harus berupa angka antara 0 dan 100.");
@@ -166,7 +158,7 @@ export default function ProductsPage() {
       data.append("rules", formData.rules);
       data.append("messageTemplate", formData.messageTemplate);
       data.append("imageUrl", formData.imageUrl);
-      
+
       if (imageFile) {
         data.append("imageFile", imageFile);
       }
@@ -200,8 +192,8 @@ export default function ProductsPage() {
     }
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(search.toLowerCase()) || 
+  const filteredProducts = products.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.category?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -216,12 +208,10 @@ export default function ProductsPage() {
     const [draggedItem] = updated.splice(draggedIndex, 1);
     updated.splice(targetIndex, 0, draggedItem);
 
-    // Optimistically update UI order
     setProducts(updated);
     setDraggedIndex(null);
     setDragOverIndex(null);
 
-    // Save new sortOrder payload to database
     setSavingOrder(true);
     try {
       const payload = updated.map((p, idx) => ({ id: p.id, sortOrder: idx }));
@@ -246,20 +236,20 @@ export default function ProductsPage() {
   return (
     <>
       <Topbar title="Manajemen Produk" subtitle="Kelola katalog produk marketplace Anda" />
-      
+
       <div className="px-4 md:px-8 pb-8 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={18} />
-            <input 
-              type="text" 
-              placeholder="Cari nama produk atau kategori..." 
+            <input
+              type="text"
+              placeholder="Cari nama produk atau kategori..."
               className="form-input pl-10"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <button 
+          <button
             onClick={() => handleOpenModal()}
             className="btn-primary"
           >
@@ -300,7 +290,7 @@ export default function ProductsPage() {
                   </tr>
                 ) : (
                   filteredProducts.map((product, index) => (
-                    <tr 
+                    <tr
                       key={product.id}
                       draggable={!search}
                       onDragStart={(e) => {
@@ -332,7 +322,7 @@ export default function ProductsPage() {
                       }`}
                     >
                       <td className="w-10 text-center">
-                        <div 
+                        <div
                           className={`inline-flex items-center justify-center p-1.5 rounded-lg transition-colors ${
                             search ? "opacity-30 cursor-not-allowed" : "cursor-grab active:cursor-grabbing hover:bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                           }`}
@@ -345,11 +335,11 @@ export default function ProductsPage() {
                         <div className="flex items-center gap-3">
                           <div className="w-12 h-12 rounded-lg bg-[var(--bg-secondary)] overflow-hidden flex-shrink-0 border border-[var(--border-color)]">
                             {product.imageUrl ? (
-                              <Image 
-                                src={product.imageUrl} 
-                                alt={product.name} 
-                                width={48} 
-                                height={48} 
+                              <Image
+                                src={product.imageUrl}
+                                alt={product.name}
+                                width={48}
+                                height={48}
                                 className="object-cover w-full h-full"
                               />
                             ) : (
@@ -374,17 +364,18 @@ export default function ProductsPage() {
                         {formatCurrency(Number(product.price))}
                       </td>
                       <td>
-                        <div className="flex flex-col">
-                          <span className={`font-medium ${(product.availableStock || 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {(product.availableStock || 0)} Slot
-                          </span>
-                          <span className="text-[10px] text-[var(--text-muted)]">
-                            {product.stockStatus === "PREORDER" ? "⚡ Pre-order" : "📦 Integrated"}
-                          </span>
-                        </div>
+                        {product.stockStatus === "PREORDER" ? (
+                          <span className="font-medium text-amber-400">⚡ Pre-order</span>
+                        ) : (
+                          <div className="flex flex-col">
+                            <span className={`font-medium ${(product.availableStock || 0) > 0 ? "text-emerald-400" : "text-red-400"}`}>
+                              {(product.availableStock || 0)} Slot
+                            </span>
+                            <span className="text-[10px] text-[var(--text-muted)]">📦 Integrated</span>
+                          </div>
+                        )}
                       </td>
                       <td>
-
                         {product.isActive ? (
                           <span className="badge badge-success">Aktif</span>
                         ) : (
@@ -393,16 +384,16 @@ export default function ProductsPage() {
                       </td>
                       <td>
                         <div className="flex items-center justify-end gap-2">
-                          <button 
+                          <button
                             onClick={() => handleOpenModal(product)}
-                            className="btn-icon" 
+                            className="btn-icon"
                             title="Edit"
                           >
                             <Edit2 size={16} />
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleDelete(product.id)}
-                            className="btn-icon hover:text-red-400" 
+                            className="btn-icon hover:text-red-400"
                             title="Hapus"
                             disabled={isDeleting === product.id}
                           >
@@ -419,7 +410,6 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Modal CRUD */}
       {isModalOpen && (
         <div className="modal-overlay">
           <div className="modal-content max-w-2xl">
@@ -435,10 +425,10 @@ export default function ProductsPage() {
               <div className="modal-body grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="form-label">Nama Produk</label>
-                  <input 
-                    type="text" 
-                    required 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    required
+                    className="form-input"
                     placeholder="Contoh: CapCut Pro 1 Bulan"
                     value={formData.name}
                     onChange={(e) => {
@@ -450,10 +440,10 @@ export default function ProductsPage() {
                 </div>
                 <div>
                   <label className="form-label">Slug URL</label>
-                  <input 
-                    type="text" 
-                    required 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    required
+                    className="form-input"
                     placeholder="capcut-pro-1-bulan"
                     value={formData.slug}
                     onChange={(e) => setFormData({...formData, slug: e.target.value})}
@@ -461,9 +451,9 @@ export default function ProductsPage() {
                 </div>
                 <div>
                   <label className="form-label">Kategori</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
+                  <input
+                    type="text"
+                    className="form-input"
                     placeholder="Contoh: Video Editing"
                     value={formData.category}
                     onChange={(e) => setFormData({...formData, category: e.target.value})}
@@ -471,10 +461,10 @@ export default function ProductsPage() {
                 </div>
                 <div>
                   <label className="form-label">Harga (IDR)</label>
-                  <input 
-                    type="number" 
-                    required 
-                    className="form-input" 
+                  <input
+                    type="number"
+                    required
+                    className="form-input"
                     placeholder="25000"
                     value={formData.price}
                     onChange={(e) => setFormData({...formData, price: e.target.value})}
@@ -482,11 +472,11 @@ export default function ProductsPage() {
                 </div>
                 <div>
                   <label className="form-label">Diskon (%)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     min="0"
                     max="100"
-                    className="form-input" 
+                    className="form-input"
                     placeholder="0"
                     value={formData.discountPercentage}
                     onChange={(e) => setFormData({...formData, discountPercentage: e.target.value})}
@@ -494,10 +484,10 @@ export default function ProductsPage() {
                 </div>
                 <div>
                   <label className="form-label">Maksimal Slot Akun</label>
-                  <input 
-                    type="number" 
-                    required 
-                    className="form-input" 
+                  <input
+                    type="number"
+                    required
+                    className="form-input"
                     placeholder="3"
                     value={formData.maxSlots}
                     onChange={(e) => setFormData({...formData, maxSlots: e.target.value})}
@@ -508,10 +498,10 @@ export default function ProductsPage() {
                 </div>
                 <div>
                   <label className="form-label">Durasi (Hari)</label>
-                  <input 
-                    type="number" 
-                    required 
-                    className="form-input" 
+                  <input
+                    type="number"
+                    required
+                    className="form-input"
                     placeholder="30"
                     value={formData.duration}
                     onChange={(e) => setFormData({...formData, duration: e.target.value})}
@@ -522,10 +512,10 @@ export default function ProductsPage() {
                   <div className="flex flex-col md:flex-row gap-4 items-start">
                     <div className="relative w-32 h-32 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-color)] overflow-hidden flex-shrink-0 group">
                       {(imageFile || formData.imageUrl) ? (
-                        <Image 
-                          src={imageFile ? URL.createObjectURL(imageFile) : formData.imageUrl} 
-                          alt="Preview" 
-                          fill 
+                        <Image
+                          src={imageFile ? URL.createObjectURL(imageFile) : formData.imageUrl}
+                          alt="Preview"
+                          fill
                           className="object-cover"
                         />
                       ) : (
@@ -533,8 +523,8 @@ export default function ProductsPage() {
                           <ImageIcon size={32} />
                         </div>
                       )}
-                      <input 
-                        type="file" 
+                      <input
+                        type="file"
                         accept="image/*"
                         className="absolute inset-0 opacity-0 cursor-pointer z-10"
                         onChange={(e) => {
@@ -547,13 +537,13 @@ export default function ProductsPage() {
                         <span className="text-[10px] text-white font-bold uppercase tracking-wider">Ubah</span>
                       </div>
                     </div>
-                    
+
                     <div className="flex-1 w-full space-y-3">
                       <div>
                         <p className="text-[11px] text-[var(--text-muted)] mb-2 uppercase font-bold tracking-widest">Atau Gunakan URL Luar</p>
-                        <input 
-                          type="text" 
-                          className="form-input" 
+                        <input
+                          type="text"
+                          className="form-input"
                           placeholder="https://example.com/image.png"
                           value={formData.imageUrl}
                           onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
@@ -567,7 +557,7 @@ export default function ProductsPage() {
                 </div>
                 <div className="md:col-span-2">
                   <label className="form-label">Deskripsi Produk</label>
-                  <RichTextEditor 
+                  <RichTextEditor
                     value={formData.description}
                     onChange={(content) => setFormData({...formData, description: content})}
                     placeholder="Jelaskan detail produk..."
@@ -575,7 +565,7 @@ export default function ProductsPage() {
                 </div>
                 <div className="md:col-span-2">
                   <label className="form-label">Aturan & Garansi (Rules)</label>
-                  <RichTextEditor 
+                  <RichTextEditor
                     value={formData.rules}
                     onChange={(content) => setFormData({...formData, rules: content})}
                     placeholder="Tuliskan aturan, syarat, dan ketentuan garansi untuk produk ini..."
@@ -583,12 +573,9 @@ export default function ProductsPage() {
                 </div>
                 <div className="md:col-span-2">
                   <label className="form-label">Template Kirim Akun (Copywriting WA)</label>
-                  <textarea 
-                    className="form-input min-h-[120px] font-mono text-sm" 
-                    placeholder="Halo [customer_name], ini akun [product_name] Anda:
-Email: [email]
-Pass: [password]
-..."
+                  <textarea
+                    className="form-input min-h-[120px] font-mono text-sm"
+                    placeholder="Halo [customer_name], ini akun [product_name] Anda:\nEmail: [email]\nPass: [password]\n..."
                     value={formData.messageTemplate}
                     onChange={(e) => setFormData({...formData, messageTemplate: e.target.value})}
                   />
@@ -600,8 +587,8 @@ Pass: [password]
                   <label className="form-label">Tipe Integrasi Stok</label>
                   <div className="flex flex-col md:flex-row gap-4">
                     <label className="flex items-center gap-2 cursor-pointer bg-[var(--bg-secondary)] p-3 rounded-xl border border-[var(--border-color)] flex-1">
-                      <input 
-                        type="radio" 
+                      <input
+                        type="radio"
                         name="stockStatus"
                         value="INTEGRATED"
                         className="w-4 h-4 accent-[var(--accent-primary)]"
@@ -614,8 +601,8 @@ Pass: [password]
                       </div>
                     </label>
                     <label className="flex items-center gap-2 cursor-pointer bg-[var(--bg-secondary)] p-3 rounded-xl border border-[var(--border-color)] flex-1">
-                      <input 
-                        type="radio" 
+                      <input
+                        type="radio"
                         name="stockStatus"
                         value="PREORDER"
                         className="w-4 h-4 accent-[var(--accent-primary)]"
@@ -631,8 +618,8 @@ Pass: [password]
                 </div>
                 <div className="md:col-span-2">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       className="w-4 h-4 accent-[var(--accent-primary)]"
                       checked={formData.isActive}
                       onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
@@ -642,16 +629,16 @@ Pass: [password]
                 </div>
               </div>
               <div className="modal-footer">
-                <button 
-                  type="button" 
-                  onClick={() => setIsModalOpen(false)} 
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
                   className="btn-secondary"
                   disabled={submitting}
                 >
                   Batal
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn-primary"
                   disabled={submitting}
                 >
