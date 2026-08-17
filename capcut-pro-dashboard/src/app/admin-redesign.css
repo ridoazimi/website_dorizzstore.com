@@ -104,33 +104,63 @@
 }
 
 /* Sidebar visual information architecture, without changing routes/permissions. */
-.admin-shell .sidebar nav > p:first-of-type { font-size: 0; }
+.admin-shell .sidebar nav {
+  display: flex;
+  flex-direction: column;
+}
+.admin-shell .sidebar nav > p:first-of-type {
+  order: 1;
+  font-size: 0;
+}
 .admin-shell .sidebar nav > p:first-of-type::after {
-  content: "OVERVIEW & OPERASIONAL";
+  content: "OVERVIEW";
   font-size: 11px;
   letter-spacing: .08em;
 }
-.admin-shell .sidebar nav > p:nth-of-type(2) { font-size: 0; }
+.admin-shell .sidebar nav > :nth-child(2) { order: 2; }
+.admin-shell .sidebar nav > :nth-child(3) { order: 3; }
+.admin-shell .sidebar nav > :nth-child(4) { order: 4; }
+.admin-shell .sidebar nav > :nth-child(5) { order: 5; }
+.admin-shell .sidebar nav > :nth-child(6) { order: 6; }
+.admin-shell .sidebar nav > :nth-child(7) { order: 7; }
+.admin-shell .sidebar nav > p:nth-of-type(2) {
+  order: 8;
+  font-size: 0;
+  margin-top: 22px;
+}
 .admin-shell .sidebar nav > p:nth-of-type(2)::after {
   content: "MARKETING & CRM";
   font-size: 11px;
   letter-spacing: .08em;
 }
-.admin-shell .sidebar a[href="/messages"] {
-  margin-top: 22px;
+.admin-shell .sidebar nav > :nth-child(10) { order: 9; }
+.admin-shell .sidebar nav > :nth-child(12) { order: 10; }
+.admin-shell .sidebar nav > :nth-child(13) { order: 11; }
+.admin-shell .sidebar nav > :nth-child(14) { order: 12; }
+.admin-shell .sidebar nav > :nth-child(15) { order: 13; }
+.admin-shell .sidebar nav > :nth-child(8) { order: 14; }
+.admin-shell .sidebar nav > :nth-child(11) { order: 15; }
+.admin-shell .sidebar nav > :nth-child(16) { order: 16; }
+
+/* Stable child positions work for both allowed links and permission-denied divs. */
+.admin-shell .sidebar nav > :nth-child(3),
+.admin-shell .sidebar nav > :nth-child(8) {
+  margin-top: 24px;
   position: relative;
 }
-.admin-shell .sidebar a[href="/messages"]::before {
-  content: "LAINNYA";
+.admin-shell .sidebar nav > :nth-child(3)::before,
+.admin-shell .sidebar nav > :nth-child(8)::before {
   position: absolute;
   left: 16px;
-  top: -20px;
+  top: -19px;
   font-size: 10px;
   line-height: 1;
   font-weight: 600;
   letter-spacing: .08em;
   color: var(--text-muted);
 }
+.admin-shell .sidebar nav > :nth-child(3)::before { content: "OPERASIONAL"; }
+.admin-shell .sidebar nav > :nth-child(8)::before { content: "LAINNYA"; }
 
 /* Keep Dorizz AI visibly distinct in purple. */
 .admin-shell .sidebar button.sidebar-link:has(svg.lucide-bot) {
@@ -234,6 +264,16 @@
   }
   .admin-shell table.data-table:has(th.w-10) tbody td:nth-child(7) > div {
     justify-content: flex-end;
+  }
+
+  /* Loading/empty rows use one colspan cell; keep it full-width instead of treating it as the order column. */
+  .admin-shell table.data-table:has(th.w-10) tbody td[colspan="7"] {
+    grid-column: 1 / -1 !important;
+    grid-row: 1 !important;
+    width: 100%;
+    padding: 48px 16px !important;
+    text-align: center;
+    align-self: stretch;
   }
 }
 
