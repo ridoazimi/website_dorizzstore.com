@@ -31,7 +31,7 @@ export async function GET() {
       GROUP BY r.id ORDER BY redemptions DESC,r.name ASC LIMIT 5
     `),
     prisma.$queryRawUnsafe<any[]>(`
-      SELECT to_char(date_trunc('month',created_at),'YYYY-MM') month,COUNT(*) FILTER(WHERE points_awarded>0)::int successful
+      SELECT to_char(date_trunc('month',created_at),'YYYY-MM') AS "month",COUNT(*) FILTER(WHERE points_awarded>0)::int AS successful
       FROM member_referrals
       WHERE created_at>=date_trunc('month',now())-interval '5 months'
       GROUP BY date_trunc('month',created_at) ORDER BY date_trunc('month',created_at)
