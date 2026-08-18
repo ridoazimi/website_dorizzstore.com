@@ -2,6 +2,8 @@ name: Member Branch CI
 on:
   push:
     branches: [agent/member-migration-20260818]
+  pull_request:
+    branches: [main]
 jobs:
   build:
     runs-on: ubuntu-latest
