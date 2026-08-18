@@ -1,3 +1,27 @@
-import { NextResponse } from "next/server";import { prisma } from "@/lib/db";import { requireAuth } from "@/lib/auth";
-export async function GET(){const a=await requireAuth();if("error" in a)return a.error;return NextResponse.json(await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM member_rewards ORDER BY is_active DESC,points_required ASC`));}
-export async function POST(req:Request){const a=await requireAuth();if("error" in a)return a.error;const {name,description,pointsRequired,fulfillmentType,productId,fulfillmentNotes}=await req.json();if(!name||Number(pointsRequired)<=0)return NextResponse.json({error:"Nama dan kebutuhan poin wajib valid"},{status:400});const rows=await prisma.$queryRawUnsafe<any[]>(`INSERT INTO member_rewards(name,description,points_required,fulfillment_type,product_id,fulfillment_notes) VALUES($1,$2,$3,$4,$5::uuid,$6) RETURNING id`,name,description||null,Number(pointsRequired),fulfillmentType||"manual",productId||null,fulfillmentNotes||null);await prisma.$executeRawUnsafe(`INSERT INTO member_admin_activity_log(admin_id,action,entity_type,entity_id,details) VALUES($1::uuid,'reward_created','reward',$2::uuid,$3::jsonb)`,a.user.id,rows[0].id,JSON.stringify({name,pointsRequired}));return NextResponse.json({success:true,id:rows[0].id});}
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { requireMemberAdmin } from "@/lib/member-admin-auth";
+
+export async function GET() {
+  const a = await requireMemberAdmin(); if ("error" in a) return a.error;
+  return NextResponse.json(await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM member_rewards ORDER BY is_active DESC,points_required ASC`));
+}
+
+export async function POST(req: Request) {
+  const a = await requireMemberAdmin(); if ("error" in a) return a.error;
+  const { name, description, pointsRequired, fulfillmentType, productId, fulfillmentNotes } = await req.json();
+  if (!name || Number(pointsRequired) <= 0) return NextResponse.json({ error: "Nama dan kebutuhan poin wajib valid" }, { status: 400 });
+  const rows = await prisma.$queryRawUnsafe<any[]>(`INSERT INTO member_rewards(name,description,points_required,fulfillment_type,product_id,fulfillment_notes) VALUES($1,$2,$3,$4,$5::uuid,$6) RETURNING id`, name, description || null, Number(pointsRequired), fulfillmentType || "manual", productId || null, fulfillmentNotes || null);
+  await prisma.$executeRawUnsafe(`INSERT INTO member_admin_activity_log(admin_id,action,entity_type,entity_id,details) VALUES($1::uuid,'reward_created','reward',$2::uuid,$3::jsonb)`, a.user.id, rows[0].id, JSON.stringify({ name, pointsRequired }));
+  return NextResponse.json({ success: true, id: rows[0].id });
+}
+
+export async function PATCH(req: Request) {
+  const a = await requireMemberAdmin(); if ("error" in a) return a.error;
+  const { id, isActive, reason } = await req.json();
+  if (!id || typeof isActive !== "boolean") return NextResponse.json({ error: "Reward dan status wajib diisi" }, { status: 400 });
+  const changed = await prisma.$queryRawUnsafe<any[]>(`UPDATE member_rewards SET is_active=$2,updated_at=now() WHERE id=$1::uuid RETURNING id,name`, id, isActive);
+  if (!changed[0]) return NextResponse.json({ error: "Reward tidak ditemukan" }, { status: 404 });
+  await prisma.$executeRawUnsafe(`INSERT INTO member_admin_activity_log(admin_id,action,entity_type,entity_id,reason,details) VALUES($1::uuid,'reward_status_changed','reward',$2::uuid,$3,$4::jsonb)`, a.user.id, id, reason || null, JSON.stringify({ isActive }));
+  return NextResponse.json({ success: true });
+}
