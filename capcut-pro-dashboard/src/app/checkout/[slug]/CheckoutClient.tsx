@@ -15,7 +15,7 @@ export default function CheckoutClient({ product, initialRef }: { product: any, 
     name: "",
     email: "",
     whatsapp: "",
-    affiliateCode: initialRef
+    memberReferralCode: initialRef
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
