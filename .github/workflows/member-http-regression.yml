@@ -1,0 +1,39 @@
+name: Member HTTP Regression
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  http-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://neondb_owner@ep-green-credit-a1fq0040.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+      JWT_SECRET: member-http-regression-secret
+      TEST_BASE_URL: http://127.0.0.1:3100
+    defaults:
+      run:
+        working-directory: capcut-pro-dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: capcut-pro-dashboard/package-lock.json
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Start test app
+        run: |
+          npm run dev -- --hostname 127.0.0.1 --port 3100 > /tmp/member-http-app.log 2>&1 &
+          echo $! > /tmp/member-http-app.pid
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3100/member >/dev/null 2>&1; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/member-http-app.log
+          exit 1
+      - name: Run Member HTTP regression
+        run: node scripts/member-http-regression.mjs
+      - name: Show app log on failure
+        if: failure()
+        run: cat /tmp/member-http-app.log || true
