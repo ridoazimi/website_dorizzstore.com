@@ -2,8 +2,8 @@ name: Member Branch CI
 on:
   push:
     branches: [agent/member-migration-20260818]
-  pull_request:
-    branches: [main]
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,14 +12,26 @@ jobs:
         working-directory: capcut-pro-dashboard
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: agent/member-migration-20260818
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - run: npm install --package-lock-only --ignore-scripts
-      - uses: actions/upload-artifact@v4
-        with:
-          name: synchronized-package-lock
-          path: capcut-pro-dashboard/package-lock.json
+      - name: Commit synchronized lockfile
+        working-directory: .
+        run: |
+          if git diff --quiet -- capcut-pro-dashboard/package-lock.json; then
+            echo "Lockfile already synchronized"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add capcut-pro-dashboard/package-lock.json
+            git commit -m "chore: sync package lock"
+            git push origin HEAD:agent/member-migration-20260818
+          fi
       - run: npm ci
       - run: npx prisma generate
       - run: npm run build
+        env:
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
