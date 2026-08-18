@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      DATABASE_URL: postgresql://neondb_owner@ep-green-credit-a1fq0040.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+      DATABASE_URL: postgresql://member_http_ci:G7%23qV9%21mN2%40xL8$zP4@ep-green-credit-a1fq0040-pooler.ap-southeast-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require
       JWT_SECRET: member-http-regression-secret
       TEST_BASE_URL: http://127.0.0.1:3100
     defaults:
