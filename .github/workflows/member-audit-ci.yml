@@ -2,6 +2,8 @@ name: Member Audit CI
 on:
   push:
     branches: [audit/member-final-build-20260818]
+  pull_request:
+    branches: [main]
 jobs:
   build:
     runs-on: ubuntu-latest
