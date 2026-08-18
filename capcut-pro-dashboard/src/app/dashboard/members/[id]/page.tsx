@@ -2,39 +2,34 @@
 
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
-import { ArrowLeft, Bell, FileCheck2, Gift, Loader2, Sparkles, Users, WalletCards } from "lucide-react";
+import { ArrowLeft, Bell, FileCheck2, Gift, History, Loader2, Sparkles, Users, WalletCards } from "lucide-react";
 
-const panel = "rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_60px_rgba(0,0,0,.18)]";
+const panel="rounded-2xl border border-white/10 bg-white/[0.035] p-4 md:p-5";
+const labels:Record<string,string>={referral_reward:"Referral berhasil",admin_adjustment:"Penyesuaian admin",reward_redemption_hold:"Hold penukaran reward",reward_redemption_release:"Pengembalian poin reward",cash_withdrawal_hold:"Hold withdrawal",cash_withdrawal_release:"Pengembalian poin withdrawal"};
 
-export default function MemberDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
-  const [data, setData] = useState<any>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    fetch(`/api/admin/members/${id}`, { cache: "no-store" })
-      .then(async r => { const j=await r.json(); if(!r.ok) throw new Error(j.error||"Gagal memuat Member"); return j; })
-      .then(setData).catch(e=>setError(e.message));
-  }, [id]);
-
-  if (error) return <main className="p-8 text-[var(--text-primary)]"><Link href="/dashboard/members">← Member</Link><p className="mt-6 text-rose-400">{error}</p></main>;
-  if (!data) return <main className="grid min-h-[60vh] place-items-center text-[var(--text-muted)]"><Loader2 className="animate-spin"/></main>;
-
+export default function MemberDetailPage({params}:{params:Promise<{id:string}>}){
+  const {id}=use(params);const [data,setData]=useState<any>(null);const [error,setError]=useState("");
+  useEffect(()=>{fetch(`/api/admin/members/${id}`,{cache:"no-store"}).then(async r=>{const j=await r.json();if(!r.ok)throw new Error(j.error||"Gagal memuat Member");return j}).then(setData).catch(e=>setError(e.message))},[id]);
+  if(error)return <main className="p-5 text-[var(--text-primary)] md:p-8"><Link href="/dashboard/members/list" className="text-sm text-[var(--text-muted)]">← Member</Link><div className="mt-5 rounded-2xl border border-rose-400/20 bg-rose-400/10 p-4 text-rose-300">{error}</div></main>;
+  if(!data)return <main className="grid min-h-[60vh] place-items-center text-[var(--text-muted)]"><div className="flex items-center gap-2"><Loader2 className="animate-spin" size={18}/> Memuat Member...</div></main>;
   const m=data.member;
-  return <main className="min-h-screen bg-[var(--bg-primary)] px-5 py-7 text-[var(--text-primary)] md:px-8"><div className="mx-auto max-w-[1400px] space-y-6">
-    <Link href="/dashboard/members" className="inline-flex items-center gap-2 text-sm text-[var(--text-muted)] hover:text-cyan-300"><ArrowLeft size={16}/> Kembali ke Member</Link>
-    <section className={panel}><div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between"><div><span className="rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-bold text-cyan-300">{m.status}</span><h1 className="mt-4 text-3xl font-black">{m.name}</h1><p className="mt-1 text-sm text-[var(--text-muted)]">{m.email} · {m.whatsapp||"WhatsApp belum diisi"}</p><p className="mt-2 font-mono text-sm text-cyan-300">Referral {m.referral_code}</p></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Metric label="Available" value={data.points.available}/><Metric label="Held" value={data.points.held}/><Metric label="Referral" value={data.referralSummary.total}/><Metric label="Rewarded" value={data.referralSummary.rewarded}/></div></div></section>
+  return <main className="min-h-screen bg-[var(--bg-primary)] px-4 py-5 text-[var(--text-primary)] md:px-6 md:py-7 lg:px-8"><div className="mx-auto max-w-[1500px] space-y-5">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><Link href="/dashboard/members/list" className="inline-flex items-center gap-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]"><ArrowLeft size={16}/> Kembali ke Member List</Link><span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${m.status==="active"?"bg-emerald-400/10 text-emerald-300":"bg-slate-400/10 text-slate-400"}`}>{m.status}</span></div>
+    <section className={panel}><div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between"><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[.16em] text-[var(--accent-primary)]">Single Member View</p><h1 className="mt-2 break-words text-2xl font-black md:text-3xl">{m.name}</h1><p className="mt-2 break-all text-sm text-[var(--text-muted)]">{m.email}</p><p className="mt-1 text-sm text-[var(--text-muted)]">{m.whatsapp||"WhatsApp belum diisi"}</p><p className="mt-3 font-mono text-xs text-[var(--accent-primary)]">Referral {m.referral_code}</p><p className="mt-2 text-xs text-[var(--text-muted)]">Bergabung {new Date(m.joined_at).toLocaleDateString("id-ID")}</p></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Metric label="Poin tersedia" value={data.points.available}/><Metric label="Poin di-hold" value={data.points.held}/><Metric label="Total referral" value={data.referralSummary.total}/><Metric label="Referral rewarded" value={data.referralSummary.rewarded}/></div></div></section>
     <div className="grid gap-5 xl:grid-cols-2">
-      <Section icon={<Users size={18}/>} title="Referral Tracking" rows={data.referrals} fields={["customer_name","transaction_status","points_awarded","is_new_customer","is_self_referral","created_at"]}/>
-      <Section icon={<Sparkles size={18}/>} title="Point Ledger" rows={data.ledger} fields={["source_type","points","status","note","created_at"]}/>
-      <Section icon={<Gift size={18}/>} title="Redemption" rows={data.redemptions} fields={["reward_name","points","status","voucher_code","rejection_reason","created_at"]}/>
-      <Section icon={<WalletCards size={18}/>} title="Withdrawal" rows={data.withdrawals} fields={["points","amount_rupiah","method","status","rejection_reason","created_at"]}/>
-      <Section icon={<Bell size={18}/>} title="Notification History" rows={data.notifications} fields={["title","message","is_read","created_at"]}/>
-      <Section icon={<FileCheck2 size={18}/>} title="T&C Acceptance" rows={data.terms} fields={["terms_version","accepted_at","ip_address"]}/>
+      <Section icon={<Users size={18}/>} title="Referral Tracking" rows={data.referrals} render={(x:any)=><><Line label="Customer" value={x.customer_name}/><Line label="Status transaksi" value={x.transaction_status}/><Line label="Poin" value={x.points_awarded}/><Line label="Customer baru" value={x.is_new_customer?"Ya":"Tidak"}/><Line label="Self-referral" value={x.is_self_referral?"Ya":"Tidak"}/><Line label="Tanggal" value={fmtDate(x.created_at)}/></>}/>
+      <Section icon={<Sparkles size={18}/>} title="Point Ledger" rows={data.ledger} render={(x:any)=><><Line label="Aktivitas" value={labels[x.source_type]||"Aktivitas poin"}/><Line label="Poin" value={x.points}/><Line label="Status" value={x.status}/><Line label="Catatan" value={x.note||"-"}/><Line label="Tanggal" value={fmtDate(x.created_at)}/></>}/>
+      <Section icon={<Gift size={18}/>} title="Redemption" rows={data.redemptions} render={(x:any)=><><Line label="Reward" value={x.reward_name}/><Line label="Poin" value={x.points}/><Line label="Status" value={x.status}/><Line label="Voucher" value={x.voucher_code||"-"}/><Line label="Alasan penolakan" value={x.rejection_reason||"-"}/><Line label="Tanggal" value={fmtDate(x.created_at)}/></>}/>
+      <Section icon={<WalletCards size={18}/>} title="Withdrawal" rows={data.withdrawals} render={(x:any)=><><Line label="Poin" value={x.points}/><Line label="Nominal" value={`Rp ${new Intl.NumberFormat("id-ID").format(Number(x.amount_rupiah||0))}`}/><Line label="Metode" value={x.method}/><Line label="Nama akun" value={x.account_name||"-"}/><Line label="Status" value={x.status}/><Line label="Alasan penolakan" value={x.rejection_reason||"-"}/><Line label="Tanggal" value={fmtDate(x.created_at)}/></>}/>
+      <Section icon={<Bell size={18}/>} title="Notification History" rows={data.notifications} render={(x:any)=><><Line label="Judul" value={x.title}/><Line label="Pesan" value={x.message}/><Line label="Status" value={x.is_read?"Sudah dibaca":"Belum dibaca"}/><Line label="Tanggal" value={fmtDate(x.created_at)}/></>}/>
+      <Section icon={<FileCheck2 size={18}/>} title="T&C Acceptance" rows={data.terms} render={(x:any)=><><Line label="Versi T&C" value={x.terms_version}/><Line label="Diterima" value={fmtDate(x.accepted_at)}/><Line label="IP" value={x.ip_address||"-"}/></>}/>
+      <Section icon={<History size={18}/>} title="Admin Activity" rows={data.adminActivity} render={(x:any)=><><Line label="Admin" value={x.admin_name||"System"}/><Line label="Aksi" value={humanAction(x.action)}/><Line label="Alasan" value={x.reason||"-"}/><Line label="Tanggal" value={fmtDate(x.created_at)}/></>}/>
     </div>
   </div></main>;
 }
 
-function Metric({label,value}:{label:string;value:any}){return <div className="rounded-2xl border border-white/10 bg-white/[.03] px-4 py-3"><p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{label}</p><p className="mt-1 text-xl font-black">{value}</p></div>}
-function Section({icon,title,rows,fields}:{icon:React.ReactNode;title:string;rows:any[];fields:string[]}){return <section className={panel}><div className="mb-4 flex items-center gap-2 text-cyan-300">{icon}<h2 className="font-black text-[var(--text-primary)]">{title}</h2></div>{!rows?.length?<p className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-[var(--text-muted)]">Belum ada data.</p>:<div className="space-y-3">{rows.map((x:any,i:number)=><div key={x.id||i} className="rounded-2xl border border-white/5 bg-white/[.02] p-4"><div className="grid gap-3 sm:grid-cols-2">{fields.map(f=><div key={f}><p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{pretty(f)}</p><p className="mt-1 break-words text-sm font-semibold">{x[f]===null||x[f]===undefined?"-":String(x[f])}</p></div>)}</div></div>)}</div>}</section>}
-function pretty(v:string){return v.replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())}
+function Metric({label,value}:{label:string;value:any}){return <div className="min-w-0 rounded-xl border border-white/10 bg-white/[.025] px-3 py-3"><p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{label}</p><p className="mt-1 break-words text-xl font-black">{value}</p></div>}
+function Section({icon,title,rows,render}:{icon:React.ReactNode;title:string;rows:any[];render:(x:any)=>React.ReactNode}){return <section className={panel}><div className="mb-4 flex items-center gap-2 text-[var(--accent-primary)]">{icon}<h2 className="font-black text-[var(--text-primary)]">{title}</h2></div>{!rows?.length?<div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-[var(--text-muted)]">Belum ada data.</div>:<div className="space-y-3">{rows.map((x:any,i:number)=><div key={x.id||i} className="rounded-xl border border-white/5 bg-white/[.02] p-4"><div className="grid gap-3 sm:grid-cols-2">{render(x)}</div></div>)}</div>}</section>}
+function Line({label,value}:{label:string;value:any}){return <div className="min-w-0"><p className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">{label}</p><p className="mt-1 break-words text-sm font-semibold">{value===null||value===undefined?"-":String(value)}</p></div>}
+function fmtDate(v:any){return v?new Date(v).toLocaleString("id-ID",{dateStyle:"medium",timeStyle:"short"}):"-"}
+function humanAction(v:string){return String(v||"Aktivitas admin").replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())}
