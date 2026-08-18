@@ -96,7 +96,7 @@ export default function Page() {
                         <div className="flex min-w-0 items-center gap-4">
                           <div className={`flex h-12 min-w-12 items-center justify-center gap-1 rounded-xl px-3 text-sm font-black ${style.badge}`}>
                             {style.icon}
-                            <span>{member.rank}</span>
+                            <span>{index + 1}</span>
                           </div>
                           <div className="min-w-0">
                             <p className="truncate text-base font-black text-white sm:text-lg">{member.name}</p>
@@ -121,7 +121,7 @@ export default function Page() {
                       >
                         <div className="flex min-w-0 items-center gap-3">
                           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[.06] text-sm font-black text-slate-300">
-                            #{member.rank}
+                            #{index + 4}
                           </div>
                           <p className="truncate font-bold text-slate-200">{member.name}</p>
                         </div>
