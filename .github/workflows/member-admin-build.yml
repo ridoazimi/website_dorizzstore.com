@@ -2,6 +2,8 @@ name: Member Admin Build Check
 on:
   push:
     branches: [member-redesign-20260819]
+  pull_request:
+    branches: [main]
 jobs:
   build:
     runs-on: ubuntu-latest
