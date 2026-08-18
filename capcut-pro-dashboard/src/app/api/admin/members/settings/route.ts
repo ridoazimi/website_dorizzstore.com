@@ -1,3 +1,21 @@
-import { NextResponse } from "next/server";import { prisma } from "@/lib/db";import { requireAuth } from "@/lib/auth";
-export async function GET(){const a=await requireAuth();if("error" in a)return a.error;return NextResponse.json(await prisma.$queryRawUnsafe<any[]>(`SELECT key,value,updated_at FROM member_settings ORDER BY key`));}
-export async function PATCH(req:Request){const a=await requireAuth();if("error" in a)return a.error;const {key,value,reason}=await req.json();const allowed=["referral_points","point_value_rupiah","minimum_withdraw_points","referral_window_days","terms_version"];if(!allowed.includes(key)||value===undefined)return NextResponse.json({error:"Setting tidak valid"},{status:400});await prisma.$executeRawUnsafe(`INSERT INTO member_settings(key,value,updated_at) VALUES($1,$2::jsonb,now()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`,key,JSON.stringify(value));await prisma.$executeRawUnsafe(`INSERT INTO member_admin_activity_log(admin_id,action,entity_type,reason,details) VALUES($1::uuid,'setting_changed','member_setting',$2,$3::jsonb)`,a.user.id,reason||null,JSON.stringify({key,value}));return NextResponse.json({success:true});}
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { requireMemberAdmin } from "@/lib/member-admin-auth";
+
+export async function GET() {
+  const a = await requireMemberAdmin(); if ("error" in a) return a.error;
+  return NextResponse.json(await prisma.$queryRawUnsafe<any[]>(`SELECT key,value,updated_at FROM member_settings ORDER BY key`));
+}
+
+export async function PATCH(req: Request) {
+  const a = await requireMemberAdmin(); if ("error" in a) return a.error;
+  const { key, value, reason } = await req.json();
+  const allowed = ["referral_points","point_value_rupiah","minimum_withdraw_points","referral_window_days","terms_version"];
+  if (!allowed.includes(key) || value === undefined) return NextResponse.json({ error: "Setting tidak valid" }, { status: 400 });
+  if (["referral_points","point_value_rupiah","minimum_withdraw_points","referral_window_days"].includes(key) && (!Number.isFinite(Number(value)) || Number(value) <= 0)) {
+    return NextResponse.json({ error: "Nilai setting harus lebih dari 0" }, { status: 400 });
+  }
+  await prisma.$executeRawUnsafe(`INSERT INTO member_settings(key,value,updated_at) VALUES($1,$2::jsonb,now()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()`, key, JSON.stringify(value));
+  await prisma.$executeRawUnsafe(`INSERT INTO member_admin_activity_log(admin_id,action,entity_type,reason,details) VALUES($1::uuid,'setting_changed','member_setting',$2,$3::jsonb)`, a.user.id, reason || null, JSON.stringify({ key, value }));
+  return NextResponse.json({ success: true });
+}
