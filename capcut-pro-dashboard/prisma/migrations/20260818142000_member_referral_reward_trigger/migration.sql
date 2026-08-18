@@ -1,14 +1,25 @@
 -- Award Member referral points only when a transaction becomes successful.
 -- Repeat customers are still recorded with zero points. Self-referrals receive zero points.
+-- Attribution is only valid for the configured referral window (default 30 days).
 CREATE OR REPLACE FUNCTION process_member_referral_success() RETURNS trigger AS $$
 DECLARE
   m RECORD;
   u RECORD;
   prior_success INTEGER;
   reward_points INTEGER;
+  referral_window_days INTEGER;
   self_ref BOOLEAN;
 BEGIN
   IF NEW.status <> 'success' OR COALESCE(OLD.status,'') = 'success' OR NEW.member_referral_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT COALESCE((value #>> '{}')::integer,30) INTO referral_window_days
+  FROM member_settings WHERE key='referral_window_days';
+  referral_window_days := COALESCE(referral_window_days,30);
+
+  IF NEW.member_referral_attributed_at IS NULL
+     OR NEW.member_referral_attributed_at < now() - make_interval(days => referral_window_days) THEN
     RETURN NEW;
   END IF;
 
