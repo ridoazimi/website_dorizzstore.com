@@ -1,2 +1,23 @@
-import { NextResponse } from "next/server";import { prisma } from "@/lib/db";import { requireAuth } from "@/lib/auth";
-export async function POST(req:Request){const a=await requireAuth();if("error" in a)return a.error;const {memberId,points,reason}=await req.json();const p=Number(points);if(!memberId||!Number.isInteger(p)||p===0||!String(reason||"").trim())return NextResponse.json({error:"Member, jumlah poin, dan alasan wajib diisi"},{status:400});await prisma.$executeRawUnsafe(`INSERT INTO member_point_ledger(member_id,source_type,points,status,note,actor_admin_id) VALUES($1::uuid,'admin_adjustment',$2,'available',$3,$4::uuid)`,memberId,p,reason,a.user.id);await prisma.$executeRawUnsafe(`INSERT INTO member_admin_activity_log(admin_id,member_id,action,entity_type,reason,details) VALUES($1::uuid,$2::uuid,'points_adjusted','point_ledger',$3,$4::jsonb)`,a.user.id,memberId,reason,JSON.stringify({points:p}));return NextResponse.json({success:true});}
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { requireMemberAdmin } from "@/lib/member-admin-auth";
+
+export async function POST(req: Request) {
+  const a = await requireMemberAdmin();
+  if ("error" in a) return a.error;
+  const { memberId, points, reason } = await req.json();
+  const p = Number(points);
+  if (!memberId || !Number.isInteger(p) || p === 0 || !String(reason || "").trim()) {
+    return NextResponse.json({ error: "Member, jumlah poin, dan alasan wajib diisi" }, { status: 400 });
+  }
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO member_point_ledger(member_id,source_type,points,status,note,actor_admin_id)
+     VALUES($1::uuid,'admin_adjustment',$2,'available',$3,$4::uuid)`, memberId, p, reason, a.user.id
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO member_admin_activity_log(admin_id,member_id,action,entity_type,reason,details)
+     VALUES($1::uuid,$2::uuid,'points_adjusted','point_ledger',$3,$4::jsonb)`,
+    a.user.id, memberId, reason, JSON.stringify({ points: p })
+  );
+  return NextResponse.json({ success: true });
+}
