@@ -10,9 +10,7 @@ export async function requireMemberAdmin() {
   if (user.role === "developer" || user.role === "superadmin") return { user };
 
   const permissions = dbUser.permissions as Record<string, boolean> | null;
-  if (permissions?.page_members === true || permissions?.page_affiliates === true) {
-    return { user };
-  }
+  if (permissions?.page_members === true) return { user };
 
   return {
     error: NextResponse.json({ error: "Akses Member tidak diizinkan" }, { status: 403 }),
