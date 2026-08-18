@@ -1,0 +1,170 @@
+// Member domain schema. Existing marketplace and Sales Creator models stay in schema.prisma.
+model Member {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name String @db.VarChar(255)
+  email String @unique @db.VarChar(255)
+  whatsapp String? @db.VarChar(50)
+  password String @db.VarChar(255)
+  referralCode String @unique @map("referral_code") @db.VarChar(12)
+  status String @default("active") @db.VarChar(30)
+  joinedAt DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+  leftAt DateTime? @map("left_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  terms MemberTermsAcceptance[]
+  referrals MemberReferral[]
+  ledger MemberPointLedger[]
+  redemptions MemberRedemption[]
+  withdrawals MemberWithdrawal[]
+  notifications MemberNotification[]
+  @@map("members")
+}
+
+model MemberTermsAcceptance {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId String @map("member_id") @db.Uuid
+  termsVersion String @map("terms_version") @db.VarChar(40)
+  acceptedAt DateTime @default(now()) @map("accepted_at") @db.Timestamptz(6)
+  ipAddress String? @map("ip_address") @db.VarChar(100)
+  userAgent String? @map("user_agent")
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  @@unique([memberId, termsVersion])
+  @@map("member_terms_acceptances")
+}
+
+model MemberSetting {
+  key String @id @db.VarChar(100)
+  value Json
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  @@map("member_settings")
+}
+
+model MemberReferral {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId String @map("member_id") @db.Uuid
+  userId String? @map("user_id") @db.Uuid
+  transactionId String @unique @map("transaction_id") @db.Uuid
+  status String @default("success") @db.VarChar(30)
+  isNewCustomer Boolean @default(false) @map("is_new_customer")
+  isSelfReferral Boolean @default(false) @map("is_self_referral")
+  pointsAwarded Int @default(0) @map("points_awarded")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  @@map("member_referrals")
+}
+
+model MemberPointLedger {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId String @map("member_id") @db.Uuid
+  userId String? @map("user_id") @db.Uuid
+  transactionId String? @map("transaction_id") @db.Uuid
+  sourceType String @map("source_type") @db.VarChar(50)
+  sourceId String? @map("source_id") @db.Uuid
+  points Int
+  status String @default("available") @db.VarChar(30)
+  note String?
+  actorAdminId String? @map("actor_admin_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  @@map("member_point_ledger")
+}
+
+model MemberReward {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name String @db.VarChar(255)
+  description String?
+  pointsRequired Int @map("points_required")
+  fulfillmentType String @default("manual") @map("fulfillment_type") @db.VarChar(40)
+  productId String? @map("product_id") @db.Uuid
+  fulfillmentNotes String? @map("fulfillment_notes")
+  isActive Boolean @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  redemptions MemberRedemption[]
+  @@map("member_rewards")
+}
+
+model MemberRedemption {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId String @map("member_id") @db.Uuid
+  rewardId String @map("reward_id") @db.Uuid
+  points Int
+  status String @default("pending") @db.VarChar(30)
+  voucherCode String? @map("voucher_code") @db.VarChar(50)
+  rejectionReason String? @map("rejection_reason")
+  adminNotes String? @map("admin_notes")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  processedBy String? @map("processed_by") @db.Uuid
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  reward MemberReward @relation(fields: [rewardId], references: [id], onDelete: Restrict)
+  @@map("member_redemptions")
+}
+
+model MemberWithdrawal {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId String @map("member_id") @db.Uuid
+  points Int
+  pointValueRupiah Int @map("point_value_rupiah")
+  amountRupiah BigInt @map("amount_rupiah")
+  method String @db.VarChar(50)
+  accountNumber String @map("account_number") @db.VarChar(100)
+  accountName String @map("account_name") @db.VarChar(255)
+  status String @default("pending") @db.VarChar(30)
+  rejectionReason String? @map("rejection_reason")
+  adminNotes String? @map("admin_notes")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  processedBy String? @map("processed_by") @db.Uuid
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  @@map("member_withdrawals")
+}
+
+model MemberNotification {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  memberId String @map("member_id") @db.Uuid
+  type String @db.VarChar(50)
+  title String @db.VarChar(255)
+  message String
+  isRead Boolean @default(false) @map("is_read")
+  metadata Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  @@map("member_notifications")
+}
+
+model MemberAdminActivityLog {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  adminId String? @map("admin_id") @db.Uuid
+  memberId String? @map("member_id") @db.Uuid
+  action String @db.VarChar(80)
+  entityType String? @map("entity_type") @db.VarChar(50)
+  entityId String? @map("entity_id") @db.Uuid
+  reason String?
+  details Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@map("member_admin_activity_log")
+}
+
+model MemberLeaderboardCampaign {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name String @db.VarChar(255)
+  monthStart DateTime @map("month_start") @db.Date
+  monthEnd DateTime @map("month_end") @db.Date
+  status String @default("active") @db.VarChar(30)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  prizes MemberLeaderboardPrize[]
+  @@map("member_leaderboard_campaigns")
+}
+
+model MemberLeaderboardPrize {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId String @map("campaign_id") @db.Uuid
+  rank Int
+  prizeName String @map("prize_name") @db.VarChar(255)
+  notes String?
+  campaign MemberLeaderboardCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  @@unique([campaignId, rank])
+  @@map("member_leaderboard_prizes")
+}
