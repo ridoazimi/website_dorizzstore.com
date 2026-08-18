@@ -63,7 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const hasPermission = (key: PermissionKey): boolean => {
     if (!user) return false;
     if (user.role === "developer" || user.role === "superadmin") return true;
-    return user.permissions?.[key] === true;
+    if (user.permissions?.[key] === true) return true;
+    // Existing admins that were explicitly granted Affiliate access keep access
+    // while the permission name transitions to Member. No database rewrite needed.
+    if (key === "page_members" && user.permissions?.page_affiliates === true) return true;
+    return false;
   };
 
   const isDeveloper = user?.role === "developer";
