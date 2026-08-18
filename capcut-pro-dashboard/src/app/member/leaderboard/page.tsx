@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Crown, Medal, Trophy, UserRound } from "lucide-react";
+import MemberPortalShell from "../(portal)/MemberPortalShell";
 
 const fmt = (value: number) => new Intl.NumberFormat("id-ID").format(Number(value || 0));
 
@@ -43,10 +44,10 @@ export default function Page() {
   const rest = top10.slice(3);
 
   return (
-    <main className="min-h-screen bg-[var(--bg-primary)] px-4 py-6 text-[var(--text-primary)] sm:px-6 md:py-10">
+    <MemberPortalShell>
       <div className="mx-auto max-w-4xl">
         <Link
-          href="/member"
+          href="/member/dashboard"
           className="inline-flex items-center gap-2 text-sm font-semibold text-slate-400 transition hover:text-white"
         >
           <ArrowLeft size={16} />
@@ -159,6 +160,6 @@ export default function Page() {
           </section>
         )}
       </div>
-    </main>
+    </MemberPortalShell>
   );
 }
