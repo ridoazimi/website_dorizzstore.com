@@ -4,6 +4,7 @@ import { verifyTokenEdge, verifySalesTokenEdge } from "@/lib/auth-edge";
 const PUBLIC_PATHS = [
   "/login", "/register", "/api/auth/login", "/api/auth/register", "/api/auth/me",
   "/api/webhook", "/api/webhook/orderkuota", "/api/cron", "/api/products", "/api/checkout", "/api/referral",
+  "/api/member",
   "/checkout", "/payment", "/terms", "/privacy", "/warranty", "/testimoni", "/r", "/member",
   "/sales-portal/login", "/api/sales-portal/auth/login",
 ];
