@@ -9,13 +9,6 @@ export interface AuthPayloadEdge {
   role: "developer" | "admin";
 }
 
-export interface AffiliatePayloadEdge {
-  id: string;
-  email: string;
-  name: string;
-  role: "affiliate";
-}
-
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "capcut-dashboard-secret-key-change-in-production"
 );
@@ -24,16 +17,6 @@ export async function verifyTokenEdge(token: string): Promise<AuthPayloadEdge | 
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
     return payload as unknown as AuthPayloadEdge;
-  } catch {
-    return null;
-  }
-}
-
-export async function verifyAffiliateTokenEdge(token: string): Promise<AffiliatePayloadEdge | null> {
-  try {
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    if ((payload as Record<string, unknown>).role !== "affiliate") return null;
-    return payload as unknown as AffiliatePayloadEdge;
   } catch {
     return null;
   }
