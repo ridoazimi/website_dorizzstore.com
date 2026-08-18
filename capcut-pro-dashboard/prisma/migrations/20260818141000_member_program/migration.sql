@@ -1,5 +1,7 @@
 -- DorizzStore Member program
 -- Scope intentionally excludes Sales Creator (sales_teams, sales_id, sales_code).
+-- Production rollout note: existing hot tables use nullable columns, NOT VALID FKs,
+-- and CONCURRENTLY-built indexes to minimize blocking writes.
 
 CREATE TABLE IF NOT EXISTS members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -42,12 +44,27 @@ INSERT INTO member_settings(key, value) VALUES
   ('terms_version', '"1"'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
-ALTER TABLE transactions
-  ADD COLUMN IF NOT EXISTS member_referral_id UUID REFERENCES members(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS member_referral_code VARCHAR(12),
-  ADD COLUMN IF NOT EXISTS member_referral_attributed_at TIMESTAMPTZ;
+-- Hot table: columns are nullable and have no default, so PostgreSQL only performs
+-- a short catalog change and does not rewrite existing transaction rows.
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS member_referral_id UUID;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS member_referral_code VARCHAR(12);
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS member_referral_attributed_at TIMESTAMPTZ;
 
-CREATE INDEX IF NOT EXISTS transactions_member_referral_idx
+-- Add FK without scanning/validating the existing transactions table while holding
+-- the stronger ALTER lock. Validation is separated below and permits normal writes.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='transactions_member_referral_id_fkey') THEN
+    ALTER TABLE transactions
+      ADD CONSTRAINT transactions_member_referral_id_fkey
+      FOREIGN KEY (member_referral_id) REFERENCES members(id) ON DELETE SET NULL NOT VALID;
+  END IF;
+END $$;
+
+ALTER TABLE transactions VALIDATE CONSTRAINT transactions_member_referral_id_fkey;
+
+-- Must stay outside an explicit transaction block. Prisma deploy executes this SQL file
+-- directly; concurrent build avoids blocking checkout writes while scanning transactions.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS transactions_member_referral_idx
   ON transactions(member_referral_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS member_referrals (
@@ -190,10 +207,26 @@ CREATE TABLE IF NOT EXISTS member_leaderboard_prizes (
   UNIQUE(campaign_id, rank)
 );
 
-ALTER TABLE vouchers
-  ADD COLUMN IF NOT EXISTS member_redemption_id UUID REFERENCES member_redemptions(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS reward_product_id UUID REFERENCES products(id) ON DELETE SET NULL;
+-- Hot-ish existing table: same additive/low-lock pattern as transactions.
+ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS member_redemption_id UUID;
+ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS reward_product_id UUID;
 
-CREATE UNIQUE INDEX IF NOT EXISTS vouchers_member_redemption_unique
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='vouchers_member_redemption_id_fkey') THEN
+    ALTER TABLE vouchers
+      ADD CONSTRAINT vouchers_member_redemption_id_fkey
+      FOREIGN KEY (member_redemption_id) REFERENCES member_redemptions(id) ON DELETE SET NULL NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='vouchers_reward_product_id_fkey') THEN
+    ALTER TABLE vouchers
+      ADD CONSTRAINT vouchers_reward_product_id_fkey
+      FOREIGN KEY (reward_product_id) REFERENCES products(id) ON DELETE SET NULL NOT VALID;
+  END IF;
+END $$;
+
+ALTER TABLE vouchers VALIDATE CONSTRAINT vouchers_member_redemption_id_fkey;
+ALTER TABLE vouchers VALIDATE CONSTRAINT vouchers_reward_product_id_fkey;
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS vouchers_member_redemption_unique
   ON vouchers(member_redemption_id)
   WHERE member_redemption_id IS NOT NULL;
