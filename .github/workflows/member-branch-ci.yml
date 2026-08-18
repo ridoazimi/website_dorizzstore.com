@@ -4,8 +4,6 @@ on:
     branches: [agent/member-migration-20260818]
   pull_request:
     branches: [main]
-permissions:
-  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,24 +12,11 @@ jobs:
         working-directory: capcut-pro-dashboard
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/member-migration-20260818
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install --package-lock-only --ignore-scripts
-      - name: Commit synchronized lockfile
-        working-directory: .
-        run: |
-          if git diff --quiet -- capcut-pro-dashboard/package-lock.json; then
-            echo "Lockfile already synchronized"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add capcut-pro-dashboard/package-lock.json
-            git commit -m "chore: sync package lock"
-            git push origin HEAD:agent/member-migration-20260818
-          fi
+          cache: npm
+          cache-dependency-path: capcut-pro-dashboard/package-lock.json
       - run: npm ci
       - run: npx prisma generate
       - run: npm run build
