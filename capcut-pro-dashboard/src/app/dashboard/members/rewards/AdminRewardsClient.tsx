@@ -86,6 +86,7 @@ export default function AdminRewardsClient(){
         const f=new FormData(form);
         if(type==="dorizz_voucher"&&!selectedProduct){setNotice("Pilih produk tujuan untuk Voucher Dorizz.");return}
         const payload:any=Object.fromEntries(f.entries());
+        payload.fulfillmentType=type;
         payload.productId=type==="dorizz_voucher"?selectedProduct?.id||"":"";
         const ok=await send("POST",payload);
         if(ok){form.reset();setType("manual");setProductSearch("");setSelectedProduct(null);setProductOpen(false)}
@@ -98,7 +99,15 @@ export default function AdminRewardsClient(){
         <div className="mt-4 space-y-4">
           <div><label className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Nama reward</label><input name="name" required className={input} placeholder="Contoh: Gratis CapCut Pro 1 Bulan"/></div>
           <div><label className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Poin dibutuhkan</label><input name="pointsRequired" type="number" min="1" required className={input} placeholder="Contoh: 15"/></div>
-          <div><label className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Jenis reward</label><select name="fulfillmentType" className={input} value={type} onChange={e=>{setType(e.target.value);setSelectedProduct(null);setProductSearch("")}}><option value="manual">Manual</option><option value="dorizz_voucher">Voucher Dorizz</option></select></div>
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-[var(--text-secondary)]">Jenis reward</label>
+            <input type="hidden" name="fulfillmentType" value={type}/>
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/8 bg-[#0b111b] p-1.5">
+              <button type="button" onClick={()=>{setType("manual");setSelectedProduct(null);setProductSearch("");setProductOpen(false)}} className={`rounded-lg px-3 py-2.5 text-sm font-bold transition ${type==="manual"?"bg-white/10 text-white shadow-sm":"text-[var(--text-muted)] hover:bg-white/[.05] hover:text-white"}`}>Manual</button>
+              <button type="button" onClick={()=>{setType("dorizz_voucher");setSelectedProduct(null);setProductSearch("");setProductOpen(false)}} className={`rounded-lg px-3 py-2.5 text-sm font-bold transition ${type==="dorizz_voucher"?"bg-[var(--accent-primary)] text-white shadow-[0_0_18px_rgba(32,213,210,.16)]":"text-[var(--text-muted)] hover:bg-white/[.05] hover:text-white"}`}>Voucher Dorizz</button>
+            </div>
+            <p className="mt-1.5 text-xs text-[var(--text-muted)]">{type==="manual"?"Reward diproses manual oleh admin.":"Reward otomatis diarahkan ke produk Dorizz yang dipilih."}</p>
+          </div>
 
           {type==="dorizz_voucher"&&<div className="space-y-2" ref={pickerRef}>
             <label className="block text-xs font-bold text-[var(--text-secondary)]">Produk tujuan</label>
