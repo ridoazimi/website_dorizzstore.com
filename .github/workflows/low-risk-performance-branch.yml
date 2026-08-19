@@ -73,16 +73,17 @@ jobs:
           from collections import Counter
           from pathlib import Path
 
+          root = Path.cwd()
           before = json.loads(Path('/tmp/lint-before.json').read_text())
           after = json.loads(Path('/tmp/lint-after.json').read_text())
 
           def counter(rows):
               c = Counter()
               for row in rows:
-                  name = Path(row['filePath']).name
+                  rel = str(Path(row['filePath']).resolve().relative_to(root.resolve()))
                   for m in row.get('messages', []):
                       if m.get('severity') == 2:
-                          c[(name, m.get('ruleId'), m.get('message'))] += 1
+                          c[(rel, m.get('ruleId'))] += 1
               return c
 
           b = counter(before)
