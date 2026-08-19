@@ -4,9 +4,24 @@ import { requireMemberAdmin } from "@/lib/member-admin-auth";
 
 export async function GET() {
   const a = await requireMemberAdmin(); if ("error" in a) return a.error;
-  const campaigns = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM member_leaderboard_campaigns ORDER BY month_start DESC`);
-  const prizes = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM member_leaderboard_prizes ORDER BY campaign_id,rank`);
-  return NextResponse.json({ campaigns, prizes });
+  const [campaigns, prizes, ranking, memberStats] = await Promise.all([
+    prisma.$queryRawUnsafe<any[]>(`SELECT c.*,COUNT(p.id)::int prize_count FROM member_leaderboard_campaigns c LEFT JOIN member_leaderboard_prizes p ON p.campaign_id=c.id GROUP BY c.id ORDER BY c.month_start DESC`),
+    prisma.$queryRawUnsafe<any[]>(`SELECT * FROM member_leaderboard_prizes ORDER BY campaign_id,rank`),
+    prisma.$queryRawUnsafe<any[]>(`WITH scores AS (
+      SELECT m.id,m.name,m.email,COALESCE(SUM(CASE WHEN l.source_type='referral_reward' AND l.points>0 THEN l.points ELSE 0 END),0)::int points
+      FROM members m
+      LEFT JOIN member_point_ledger l ON l.member_id=m.id
+        AND l.created_at>=date_trunc('month',now())
+        AND l.created_at<date_trunc('month',now())+interval '1 month'
+      WHERE m.status='active'
+      GROUP BY m.id,m.name,m.email
+    ), ranked AS (
+      SELECT *,RANK() OVER(ORDER BY points DESC,name ASC)::int rank FROM scores
+    )
+    SELECT * FROM ranked ORDER BY rank,name LIMIT 10`),
+    prisma.$queryRawUnsafe<any[]>(`SELECT COUNT(*) FILTER(WHERE status='active')::int active_members,COUNT(*)::int total_members FROM members`),
+  ]);
+  return NextResponse.json({ campaigns, prizes, ranking, memberStats: memberStats[0] || { active_members: 0, total_members: 0 } });
 }
 
 export async function POST(req: Request) {
