@@ -86,15 +86,40 @@ jobs:
                           c[(rel, m.get('ruleId'))] += 1
               return c
 
-          b = counter(before)
-          a = counter(after)
-          introduced = a - b
+          introduced = counter(after) - counter(before)
           if introduced:
               print('New lint errors introduced by patch:')
               for key, count in introduced.items():
                   print(count, key)
               raise SystemExit(1)
           print('No new lint errors introduced by low-risk patch.')
+          PY
+
+      - name: Targeted regression assertions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('capcut-pro-dashboard')
+          sidebar = (root/'src/components/Sidebar.tsx').read_text()
+          trx = (root/'src/app/transactions/page.tsx').read_text()
+          stock = (root/'src/app/stock/page.tsx').read_text()
+          assert 'fetch("/api/warranty/pending-count")' in sidebar
+          assert 'const fetchPendingWarrantyCount = async () =>' in sidebar
+          assert 'import * as XLSX from "xlsx";' not in trx
+          assert 'const XLSX = await import("xlsx");' in trx
+          for rel in [
+              'src/app/transactions/page.tsx',
+              'src/app/users/page.tsx',
+              'src/app/stock/page.tsx',
+              'src/app/dashboard/warranty/page.tsx',
+              'src/app/sales/page.tsx',
+          ]:
+              text = (root/rel).read_text()
+              assert 'useDebouncedValue' in text, rel
+              assert 'debouncedSearch' in text, rel
+          assert 'Product options are static for the lifetime of this page' in stock
+          assert 'fetch("/api/products/list")' in stock
+          print('Targeted low-risk regression assertions passed.')
           PY
 
       - name: Build
@@ -119,20 +144,20 @@ jobs:
               'capcut-pro-dashboard/src/app/dashboard/warranty/page.tsx',
               'capcut-pro-dashboard/src/app/sales/page.tsx',
           }
-          changed = set(subprocess.check_output(['git','status','--porcelain'], text=True).splitlines())
-          paths = {line[3:] for line in changed if line.strip()}
+          tracked = subprocess.check_output(['git','diff','--name-only'], text=True).splitlines()
+          untracked = subprocess.check_output(['git','ls-files','--others','--exclude-standard'], text=True).splitlines()
+          paths = set(tracked) | set(untracked)
           unexpected = paths - allowed
           if unexpected:
               raise SystemExit(f'Unexpected changed files: {sorted(unexpected)}')
+          missing = allowed - paths
+          if missing:
+              raise SystemExit(f'Expected changed files missing: {sorted(missing)}')
           print('scope verification passed:', sorted(paths))
           PY
 
       - name: Commit validated application changes
         run: |
-          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard capcut-pro-dashboard)" ]; then
-            echo "No application changes to commit."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
