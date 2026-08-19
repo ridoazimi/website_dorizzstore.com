@@ -61,7 +61,7 @@ export async function GET(_req: Request, context: { params: Promise<{ section: s
 
   if (section === "withdrawals") {
     const minimum = await memberSetting("minimum_withdraw_points",30);
-    const history = await prisma.$queryRawUnsafe<any[]>(`SELECT id,points,amount_rupiah,method,account_number,account_name,status,rejection_reason,created_at,processed_at FROM member_withdrawals WHERE member_id=$1::uuid ORDER BY created_at DESC LIMIT 100`, member.id);
+    const history = await prisma.$queryRawUnsafe<any[]>(`SELECT id,points,amount_rupiah::text AS amount_rupiah,method,account_number,account_name,status,rejection_reason,created_at,processed_at FROM member_withdrawals WHERE member_id=$1::uuid ORDER BY created_at DESC LIMIT 100`, member.id);
     return NextResponse.json({ points:{...balances,pointValue}, minimum, history });
   }
 
