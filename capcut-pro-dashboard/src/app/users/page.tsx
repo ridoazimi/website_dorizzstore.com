@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Topbar from "@/components/Topbar";
 import { usePrivacy } from "@/context/PrivacyContext";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import {
   Search,
   MessageCircle,
@@ -111,6 +112,7 @@ export default function UsersPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 400);
   const [sortBy, setSortBy] = useState("terbaru");
 
   // Advanced filter state
@@ -306,7 +308,7 @@ export default function UsersPage() {
 
   const buildFilterParams = useCallback(() => {
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     if (activeFilters.status === "active") params.set("status", "active");
     else if (activeFilters.status === "inactive") params.set("status", "inactive");
     if (activeFilters.tagIds.length > 0) params.set("tagIds", activeFilters.tagIds.join(","));
@@ -316,7 +318,7 @@ export default function UsersPage() {
     if (activeFilters.maxTrx) params.set("maxTrx", activeFilters.maxTrx);
     params.set("sortBy", sortBy);
     return params; // page & limit diambil dari arg fetchData
-  }, [search, activeFilters, sortBy]);
+  }, [debouncedSearch, activeFilters, sortBy]);
 
   const fetchData = useCallback((pageNum: number, append: boolean) => {
     if (append) setLoadingMore(true);
