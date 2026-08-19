@@ -6,12 +6,16 @@ on:
       - agent/dorizzstore-low-risk-performance
     paths:
       - .perf-low-risk-trigger
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   patch-test-commit:
+    if: github.head_ref == 'agent/dorizzstore-low-risk-performance' || github.ref_name == 'agent/dorizzstore-low-risk-performance'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
@@ -27,8 +31,13 @@ jobs:
           cache: npm
           cache-dependency-path: capcut-pro-dashboard/package-lock.json
 
-      - name: Apply low-risk patch
-        run: python3 .github/scripts/apply-low-risk-performance.py
+      - name: Apply low-risk patch when needed
+        run: |
+          if [ "$(git log -1 --pretty=%s)" = "optimize low-risk admin navigation performance" ]; then
+            echo "Application patch already applied; validating current branch state."
+          else
+            python3 .github/scripts/apply-low-risk-performance.py
+          fi
 
       - name: Install dependencies
         working-directory: capcut-pro-dashboard
@@ -70,6 +79,10 @@ jobs:
 
       - name: Commit validated application changes
         run: |
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard capcut-pro-dashboard)" ]; then
+            echo "No application changes to commit."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
