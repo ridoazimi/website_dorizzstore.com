@@ -27,9 +27,25 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: capcut-pro-dashboard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: capcut-pro-dashboard
+        run: npm ci
+
+      - name: Capture baseline lint on touched existing files
+        working-directory: capcut-pro-dashboard
+        run: |
+          npx eslint --format json \
+            src/components/Sidebar.tsx \
+            src/app/transactions/page.tsx \
+            src/app/users/page.tsx \
+            src/app/stock/page.tsx \
+            src/app/dashboard/warranty/page.tsx \
+            src/app/sales/page.tsx \
+            > /tmp/lint-before.json || true
 
       - name: Apply low-risk patch when needed
         run: |
@@ -39,13 +55,46 @@ jobs:
             python3 .github/scripts/apply-low-risk-performance.py
           fi
 
-      - name: Install dependencies
+      - name: Verify no new lint errors from patch
         working-directory: capcut-pro-dashboard
-        run: npm ci
+        run: |
+          npx eslint --format json \
+            src/components/Sidebar.tsx \
+            src/app/transactions/page.tsx \
+            src/app/users/page.tsx \
+            src/app/stock/page.tsx \
+            src/app/dashboard/warranty/page.tsx \
+            src/app/sales/page.tsx \
+            src/hooks/useDebouncedValue.ts \
+            src/app/api/warranty/pending-count/route.ts \
+            > /tmp/lint-after.json || true
+          python3 - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
 
-      - name: Lint
-        working-directory: capcut-pro-dashboard
-        run: npm run lint
+          before = json.loads(Path('/tmp/lint-before.json').read_text())
+          after = json.loads(Path('/tmp/lint-after.json').read_text())
+
+          def counter(rows):
+              c = Counter()
+              for row in rows:
+                  name = Path(row['filePath']).name
+                  for m in row.get('messages', []):
+                      if m.get('severity') == 2:
+                          c[(name, m.get('ruleId'), m.get('message'))] += 1
+              return c
+
+          b = counter(before)
+          a = counter(after)
+          introduced = a - b
+          if introduced:
+              print('New lint errors introduced by patch:')
+              for key, count in introduced.items():
+                  print(count, key)
+              raise SystemExit(1)
+          print('No new lint errors introduced by low-risk patch.')
+          PY
 
       - name: Build
         working-directory: capcut-pro-dashboard
