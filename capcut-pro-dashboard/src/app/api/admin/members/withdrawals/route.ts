@@ -4,7 +4,7 @@ import { requireMemberAdmin } from "@/lib/member-admin-auth";
 
 export async function GET() {
   const a = await requireMemberAdmin(); if ("error" in a) return a.error;
-  return NextResponse.json(await prisma.$queryRawUnsafe<any[]>(`SELECT w.*,m.name member_name FROM member_withdrawals w JOIN members m ON m.id=w.member_id ORDER BY w.created_at DESC`));
+  return NextResponse.json(await prisma.$queryRawUnsafe<any[]>(`SELECT w.id,w.member_id,w.points,w.point_value_rupiah,w.amount_rupiah::text AS amount_rupiah,w.method,w.account_number,w.account_name,w.status,w.rejection_reason,w.admin_notes,w.created_at,w.processed_at,w.processed_by,m.name member_name FROM member_withdrawals w JOIN members m ON m.id=w.member_id ORDER BY w.created_at DESC`));
 }
 
 export async function PATCH(req: Request) {
