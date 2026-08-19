@@ -4,7 +4,7 @@ import { getMember, memberSetting } from "@/lib/member";
 
 export async function GET(){
  const m=await getMember();if(!m)return NextResponse.json({error:"Unauthorized"},{status:401});
- return NextResponse.json(await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM member_withdrawals WHERE member_id=$1::uuid ORDER BY created_at DESC`,m.id));
+ return NextResponse.json(await prisma.$queryRawUnsafe<any[]>(`SELECT id,member_id,points,point_value_rupiah,amount_rupiah::text AS amount_rupiah,method,account_number,account_name,status,rejection_reason,admin_notes,created_at,processed_at,processed_by FROM member_withdrawals WHERE member_id=$1::uuid ORDER BY created_at DESC`,m.id));
 }
 
 export async function POST(req:Request){
