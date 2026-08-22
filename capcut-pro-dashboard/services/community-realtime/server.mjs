@@ -7,6 +7,7 @@ import { jwtDecrypt } from "jose";
 const { Client, Pool } = pg;
 
 const DATABASE_URL = process.env.COMMUNITY_DATABASE_URL || process.env.DATABASE_URL;
+const LISTENER_DATABASE_URL = process.env.COMMUNITY_LISTENER_DATABASE_URL || process.env.DIRECT_URL || DATABASE_URL;
 const COMMUNITY_SECRET = process.env.COMMUNITY_JWT_SECRET;
 const allowedOrigins = String(process.env.COMMUNITY_ALLOWED_ORIGINS || "")
   .split(",")
@@ -14,6 +15,7 @@ const allowedOrigins = String(process.env.COMMUNITY_ALLOWED_ORIGINS || "")
   .filter(Boolean);
 
 if (!DATABASE_URL) throw new Error("COMMUNITY_DATABASE_URL or DATABASE_URL is required");
+if (!LISTENER_DATABASE_URL) throw new Error("COMMUNITY_LISTENER_DATABASE_URL or DIRECT_URL is required");
 if (!COMMUNITY_SECRET) throw new Error("COMMUNITY_JWT_SECRET is required");
 if (!allowedOrigins.length) throw new Error("COMMUNITY_ALLOWED_ORIGINS is required");
 
@@ -280,7 +282,7 @@ let listenerRetry = null;
 
 async function startEventBridge() {
   if (listenerClient) return;
-  const client = new Client({ connectionString: DATABASE_URL, keepAlive: true });
+  const client = new Client({ connectionString: LISTENER_DATABASE_URL, keepAlive: true });
   client.on("notification", (message) => {
     if (message.channel !== EVENT_CHANNEL || !message.payload) return;
     try {
