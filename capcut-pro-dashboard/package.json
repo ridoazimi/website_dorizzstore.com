@@ -1,54 +1,6 @@
 {
-  "name": "capcut-pro-dashboard",
-  "version": "0.1.0",
-  "description": "Dorizz Store admin dashboard",
-  "private": true,
-  "scripts": {
-    "dev": "next dev --webpack",
-    "check:community": "node --check services/community-realtime/server.mjs && node --check services/community-realtime/api/socket-io.mjs && node --check services/community-realtime/api/health.mjs",
-    "build": "npm run check:community && next build",
-    "migrate:deploy": "prisma migrate deploy",
-    "start": "next start",
-    "lint": "eslint",
-    "postinstall": "prisma generate"
-  },
-  "dependencies": {
-    "@neondatabase/serverless": "^1.0.2",
-    "@prisma/adapter-neon": "^7.5.0",
-    "@prisma/adapter-pg": "^7.5.0",
-    "@prisma/client": "^7.5.0",
-    "@types/bcryptjs": "^2.4.6",
-    "@types/pg": "^8.18.0",
-    "@vercel/blob": "^2.3.3",
-    "ai": "^6.0.34",
-    "bcryptjs": "^3.0.3",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
-    "dotenv": "^17.3.1",
-    "jose": "^6.2.2",
-    "lucide-react": "^0.577.0",
-    "next": "16.1.6",
-    "nodemailer": "^8.0.7",
-    "pg": "^8.20.0",
-    "prisma": "^7.5.0",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "react-quill-new": "^3.8.3",
-    "recharts": "^3.8.0",
-    "server-only": "^0.0.1",
-    "tailwind-merge": "^3.5.0",
-    "xlsx": "^0.18.5"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/nodemailer": "^8.0.0",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4.3.2",
-    "typescript": "^5"
-  }
+  "name":"capcut-pro-dashboard","version":"0.1.0","description":"Dorizz Store admin dashboard","private":true,
+  "scripts":{"dev":"next dev --webpack","build":"next build","migrate:deploy":"prisma migrate deploy","start":"next start","lint":"eslint","postinstall":"prisma generate"},
+  "dependencies":{"@neondatabase/serverless":"^1.0.2","@prisma/adapter-neon":"^7.5.0","@prisma/adapter-pg":"^7.5.0","@prisma/client":"^7.5.0","@types/bcryptjs":"^2.4.6","@types/pg":"^8.18.0","@vercel/blob":"^2.3.3","ai":"^6.0.34","bcryptjs":"^3.0.3","class-variance-authority":"^0.7.1","clsx":"^2.1.1","date-fns":"^4.1.0","dotenv":"^17.3.1","jose":"^6.2.2","lucide-react":"^0.577.0","next":"16.1.6","nodemailer":"^8.0.7","pg":"^8.20.0","prisma":"^7.5.0","react":"19.2.3","react-dom":"19.2.3","react-quill-new":"^3.8.3","recharts":"^3.8.0","server-only":"^0.0.1","tailwind-merge":"^3.5.0","xlsx":"^0.18.5"},
+  "devDependencies":{"@tailwindcss/postcss":"^4","@types/node":"^20","@types/nodemailer":"^8.0.0","@types/react":"^19","@types/react-dom":"^19","eslint":"^9","eslint-config-next":"16.1.6","tailwindcss":"^4.3.2","typescript":"^5"}
 }
