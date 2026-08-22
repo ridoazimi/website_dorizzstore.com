@@ -13,17 +13,21 @@ function communityKey() {
   return new Uint8Array(createHash("sha256").update(secret).digest());
 }
 
-export function getCommunitySocketUrl() {
-  const value = process.env.COMMUNITY_SOCKET_URL?.trim().replace(/\/$/, "");
-  if (!value) return null;
+function normalizeSocketUrl(value: string | null | undefined) {
+  const normalized = value?.trim().replace(/\/$/, "");
+  if (!normalized) return null;
   try {
-    const url = new URL(value);
+    const url = new URL(normalized);
     if (process.env.NODE_ENV === "production" && url.protocol !== "https:") return null;
-    if (!['https:', 'http:'].includes(url.protocol)) return null;
+    if (!["https:", "http:"].includes(url.protocol)) return null;
     return url.toString().replace(/\/$/, "");
   } catch {
     return null;
   }
+}
+
+export function getCommunitySocketUrl(requestOrigin?: string) {
+  return normalizeSocketUrl(process.env.COMMUNITY_SOCKET_URL) || normalizeSocketUrl(requestOrigin);
 }
 
 export async function signCommunityToken(input:
