@@ -177,12 +177,12 @@ function serializeMessage(row, adminView = false) {
   const result = {
     id: row.id,
     clientMessageId: row.client_message_id,
-    senderName: row.sender_name_snapshot,
+    senderName: row.sender_type === "admin" ? "DorizzStore" : row.sender_name_snapshot,
     isAdmin: row.sender_type === "admin",
     body: deleted ? "" : row.body,
     reply: row.reply_id ? {
       id: row.reply_id,
-      senderName: row.reply_sender_name,
+      senderName: row.reply_sender_type === "admin" ? "DorizzStore" : row.reply_sender_name,
       body: replyDeleted ? "" : row.reply_body,
       deleted: replyDeleted,
     } : null,
@@ -196,7 +196,7 @@ function serializeMessage(row, adminView = false) {
 const MESSAGE_SELECT = `
   SELECT m.id,m.client_message_id,m.sender_type,m.member_id,m.admin_id,
          m.sender_name_snapshot,m.body,m.reply_to_id,m.created_at,m.deleted_at,
-         r.id AS reply_id,r.sender_name_snapshot AS reply_sender_name,
+         r.id AS reply_id,r.sender_type AS reply_sender_type,r.sender_name_snapshot AS reply_sender_name,
          r.body AS reply_body,r.deleted_at AS reply_deleted_at
     FROM member_community_messages m
     LEFT JOIN member_community_messages r ON r.id=m.reply_to_id`;
@@ -279,7 +279,7 @@ async function createMessage(socket, input) {
   } else {
     const state = await assertAdmin(actor.id);
     if (!state.ok) return messageError(state.code, state.message);
-    actor.name = state.admin.name || "Admin DorizzStore";
+    actor.name = "DorizzStore";
   }
 
   if (input.replyToId) {
@@ -368,7 +368,7 @@ async function requireAdminSocket(socket) {
   if (!actor || actor.type !== "admin") return { ok: false, response: messageError("ADMIN_ONLY", "Aksi khusus admin") };
   const state = await assertAdmin(actor.id);
   if (!state.ok) return { ok: false, response: messageError(state.code, state.message) };
-  actor.name = state.admin.name || "Admin DorizzStore";
+  actor.name = "DorizzStore";
   return { ok: true, actor };
 }
 
@@ -388,7 +388,7 @@ io.use(async (socket, next) => {
     if (payload.actor === "admin" && isUuid(payload.aid)) {
       const state = await assertAdmin(payload.aid);
       if (!state.ok) return next(new Error(state.code));
-      socket.data.actor = { type: "admin", id: payload.aid, name: state.admin.name || "Admin DorizzStore" };
+      socket.data.actor = { type: "admin", id: payload.aid, name: "DorizzStore" };
       return next();
     }
     return next(new Error("INVALID_ACTOR"));
@@ -523,20 +523,23 @@ io.on("connection", (socket) => {
         return ackSafe(ack, messageError("BAD_PAYLOAD", "Member tidak valid"));
       }
       const reason = String(input?.reason || "Pembatasan komunitas dicabut").trim().slice(0, 500) || "Pembatasan komunitas dicabut";
-      const target = await getMemberState(input.memberId);
-      if (!target) return ackSafe(ack, messageError("MEMBER_NOT_FOUND", "Member tidak ditemukan"));
+      const current = await getMemberState(input.memberId);
+      if (!current) return ackSafe(ack, messageError("MEMBER_NOT_FOUND", "Member tidak ditemukan"));
+      const previousRestriction = current.community_status;
       await pool.query(
         `INSERT INTO member_community_restrictions(member_id,status,muted_until,reason,updated_by_admin_id,updated_at)
          VALUES($1::uuid,'active',NULL,NULL,$2::uuid,now())
          ON CONFLICT(member_id) DO UPDATE SET status='active',muted_until=NULL,reason=NULL,updated_by_admin_id=EXCLUDED.updated_by_admin_id,updated_at=now()`,
         [input.memberId, admin.actor.id]
       );
-      await writeAdminAudit(admin.actor.id, input.memberId, "community_member_unbanned", "member", input.memberId, reason);
+      const action = previousRestriction === "muted" ? "community_member_unmuted" : "community_member_unbanned";
+      await writeAdminAudit(admin.actor.id, input.memberId, action, "member", input.memberId, reason);
+      io.to(`member:${input.memberId}`).emit("restriction:changed", { status: "active", mutedUntil: null });
       io.to("community:admins").emit("restriction:changed", { memberId: input.memberId, status: "active", mutedUntil: null });
       ackSafe(ack, { ok: true });
     } catch (error) {
-      console.error("community unban error", error);
-      ackSafe(ack, messageError("SERVER_ERROR", "Gagal membuka ban member"));
+      console.error("community unrestrict error", error);
+      ackSafe(ack, messageError("SERVER_ERROR", "Gagal membuka pembatasan member"));
     }
   });
 
@@ -582,8 +585,7 @@ setInterval(() => {
 
 async function shutdown(signal) {
   console.log(`community realtime received ${signal}`);
-  io.close();
-  server.close(async () => {
+  io.close(async () => {
     await pool.end().catch(() => {});
     process.exit(0);
   });
