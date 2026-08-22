@@ -1,42 +1,32 @@
 import http from "node:http";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Server } from "socket.io";
 import pg from "pg";
 import { jwtDecrypt } from "jose";
 
-const { Pool } = pg;
+const { Client, Pool } = pg;
 
-const PORT = Number(process.env.PORT || 3001);
-const DATABASE_URL = process.env.COMMUNITY_DATABASE_URL;
+const DATABASE_URL = process.env.COMMUNITY_DATABASE_URL || process.env.DATABASE_URL;
 const COMMUNITY_SECRET = process.env.COMMUNITY_JWT_SECRET;
 const allowedOrigins = String(process.env.COMMUNITY_ALLOWED_ORIGINS || "")
   .split(",")
   .map((value) => value.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
-if (!DATABASE_URL) throw new Error("COMMUNITY_DATABASE_URL is required");
+if (!DATABASE_URL) throw new Error("COMMUNITY_DATABASE_URL or DATABASE_URL is required");
 if (!COMMUNITY_SECRET) throw new Error("COMMUNITY_JWT_SECRET is required");
 if (!allowedOrigins.length) throw new Error("COMMUNITY_ALLOWED_ORIGINS is required");
 
+const EVENT_CHANNEL = "dorizz_member_community";
+const INSTANCE_ID = randomUUID();
 const key = new Uint8Array(createHash("sha256").update(COMMUNITY_SECRET).digest());
 const pool = new Pool({ connectionString: DATABASE_URL, max: 10, idleTimeoutMillis: 30_000 });
 const rateBuckets = new Map();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const server = http.createServer(async (req, res) => {
-  if (req.url === "/health") {
-    try {
-      await pool.query("SELECT 1");
-      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-      res.end(JSON.stringify({ ok: true, database: true }));
-    } catch {
-      res.writeHead(503, { "content-type": "application/json", "cache-control": "no-store" });
-      res.end(JSON.stringify({ ok: false, database: false }));
-    }
-    return;
-  }
-  if (req.url?.startsWith("/socket.io/")) return;
-  res.writeHead(404, { "content-type": "application/json" });
+const server = http.createServer((req, res) => {
+  if (req.url?.includes("/socket.io/")) return;
+  res.writeHead(404, { "content-type": "application/json", "cache-control": "no-store" });
   res.end(JSON.stringify({ error: "Not found" }));
 });
 
@@ -49,10 +39,10 @@ const io = new Server(server, {
       if (allowedOrigins.includes(normalized)) return callback(null, true);
       return callback(new Error("Origin not allowed"));
     },
-    methods: ["GET", "POST"],
+    methods: ["GET"],
   },
   maxHttpBufferSize: 32_000,
-  transports: ["polling", "websocket"],
+  transports: ["websocket"],
 });
 
 function isPlainObject(value) {
@@ -252,10 +242,82 @@ async function listHistory(input, adminView) {
   return { ok: true, messages: rows.map((row) => serializeMessage(row, adminView)), hasMore };
 }
 
-async function broadcastMessage(row) {
-  io.to("community:members").emit("message:new", serializeMessage(row, false));
-  io.to("community:admins").emit("message:new", serializeMessage(row, true));
+async function emitRealtimeEvent(event) {
+  if (event.type === "message:new" && isUuid(event.messageId)) {
+    const row = await fetchMessage(event.messageId);
+    if (!row) return;
+    io.to("community:members").emit("message:new", serializeMessage(row, false));
+    io.to("community:admins").emit("message:new", serializeMessage(row, true));
+    return;
+  }
+  if (event.type === "message:deleted" && isUuid(event.messageId)) {
+    io.to("community:members").emit("message:deleted", { messageId: event.messageId });
+    io.to("community:admins").emit("message:deleted", { messageId: event.messageId });
+    return;
+  }
+  if (event.type === "restriction:changed" && isUuid(event.memberId)) {
+    const payload = { status: event.status, mutedUntil: event.mutedUntil || null };
+    io.to(`member:${event.memberId}`).emit("restriction:changed", payload);
+    io.to("community:admins").emit("restriction:changed", { memberId: event.memberId, ...payload });
+    if (event.status === "banned" || event.status === "inactive") {
+      setTimeout(() => io.in(`member:${event.memberId}`).disconnectSockets(true), 75);
+    }
+  }
 }
+
+async function publishRealtimeEvent(event) {
+  await emitRealtimeEvent(event);
+  const payload = JSON.stringify({ ...event, source: INSTANCE_ID });
+  try {
+    await pool.query("SELECT pg_notify($1,$2)", [EVENT_CHANNEL, payload]);
+  } catch (error) {
+    console.error("community realtime notify error", error);
+  }
+}
+
+let listenerClient = null;
+let listenerRetry = null;
+
+async function startEventBridge() {
+  if (listenerClient) return;
+  const client = new Client({ connectionString: DATABASE_URL, keepAlive: true });
+  client.on("notification", (message) => {
+    if (message.channel !== EVENT_CHANNEL || !message.payload) return;
+    try {
+      const event = JSON.parse(message.payload);
+      if (event.source === INSTANCE_ID) return;
+      void emitRealtimeEvent(event).catch((error) => console.error("community realtime bridge event error", error));
+    } catch (error) {
+      console.error("community realtime bridge payload error", error);
+    }
+  });
+  const scheduleReconnect = () => {
+    if (listenerClient === client) listenerClient = null;
+    if (listenerRetry) return;
+    listenerRetry = setTimeout(() => {
+      listenerRetry = null;
+      void startEventBridge().catch((error) => console.error("community realtime bridge retry error", error));
+    }, 2_000);
+    listenerRetry.unref?.();
+  };
+  client.on("error", (error) => {
+    console.error("community realtime bridge connection error", error);
+    scheduleReconnect();
+  });
+  client.on("end", scheduleReconnect);
+  await client.connect();
+  await client.query(`LISTEN ${EVENT_CHANNEL}`);
+  listenerClient = client;
+}
+
+void startEventBridge().catch((error) => {
+  console.error("community realtime bridge start error", error);
+  listenerRetry = setTimeout(() => {
+    listenerRetry = null;
+    void startEventBridge().catch((retryError) => console.error("community realtime bridge retry error", retryError));
+  }, 2_000);
+  listenerRetry.unref?.();
+});
 
 async function createMessage(socket, input) {
   if (!hasOnlyKeys(input || {}, ["clientMessageId", "body", "replyToId"])) {
@@ -327,7 +389,7 @@ async function createMessage(socket, input) {
 
   const row = await fetchMessage(messageId);
   if (!row) return messageError("MESSAGE_NOT_FOUND", "Pesan tidak ditemukan setelah disimpan");
-  if (!duplicate) await broadcastMessage(row);
+  if (!duplicate) await publishRealtimeEvent({ type: "message:new", messageId });
   return { ok: true, message: serializeMessage(row, actor.type === "admin"), duplicate };
 }
 
@@ -449,8 +511,7 @@ io.on("connection", (socket) => {
       const row = rows[0];
       if (!row) return ackSafe(ack, messageError("MESSAGE_NOT_FOUND", "Pesan tidak ditemukan atau sudah dihapus"));
       await writeAdminAudit(admin.actor.id, row.member_id, "community_message_deleted", "community_message", row.id, reason);
-      io.to("community:members").emit("message:deleted", { messageId: row.id });
-      io.to("community:admins").emit("message:deleted", { messageId: row.id });
+      await publishRealtimeEvent({ type: "message:deleted", messageId: row.id });
       ackSafe(ack, { ok: true });
     } catch (error) {
       console.error("community delete error", error);
@@ -479,8 +540,7 @@ io.on("connection", (socket) => {
       );
       const mutedUntil = new Date(rows[0].muted_until).toISOString();
       await writeAdminAudit(admin.actor.id, input.memberId, "community_member_muted", "member", input.memberId, reason, { durationMinutes: duration, mutedUntil });
-      io.to(`member:${input.memberId}`).emit("restriction:changed", { status: "muted", mutedUntil });
-      io.to("community:admins").emit("restriction:changed", { memberId: input.memberId, status: "muted", mutedUntil });
+      await publishRealtimeEvent({ type: "restriction:changed", memberId: input.memberId, status: "muted", mutedUntil });
       ackSafe(ack, { ok: true, mutedUntil });
     } catch (error) {
       console.error("community mute error", error);
@@ -505,10 +565,8 @@ io.on("connection", (socket) => {
         [input.memberId, reason, admin.actor.id]
       );
       await writeAdminAudit(admin.actor.id, input.memberId, "community_member_banned", "member", input.memberId, reason);
-      io.to(`member:${input.memberId}`).emit("restriction:changed", { status: "banned", mutedUntil: null });
-      io.to("community:admins").emit("restriction:changed", { memberId: input.memberId, status: "banned", mutedUntil: null });
+      await publishRealtimeEvent({ type: "restriction:changed", memberId: input.memberId, status: "banned", mutedUntil: null });
       ackSafe(ack, { ok: true });
-      setTimeout(() => io.in(`member:${input.memberId}`).disconnectSockets(true), 75);
     } catch (error) {
       console.error("community ban error", error);
       ackSafe(ack, messageError("SERVER_ERROR", "Gagal ban member"));
@@ -534,8 +592,7 @@ io.on("connection", (socket) => {
       );
       const action = previousRestriction === "muted" ? "community_member_unmuted" : "community_member_unbanned";
       await writeAdminAudit(admin.actor.id, input.memberId, action, "member", input.memberId, reason);
-      io.to(`member:${input.memberId}`).emit("restriction:changed", { status: "active", mutedUntil: null });
-      io.to("community:admins").emit("restriction:changed", { memberId: input.memberId, status: "active", mutedUntil: null });
+      await publishRealtimeEvent({ type: "restriction:changed", memberId: input.memberId, status: "active", mutedUntil: null });
       ackSafe(ack, { ok: true });
     } catch (error) {
       console.error("community unrestrict error", error);
@@ -583,18 +640,4 @@ setInterval(() => {
   }
 }, 60_000).unref();
 
-async function shutdown(signal) {
-  console.log(`community realtime received ${signal}`);
-  io.close(async () => {
-    await pool.end().catch(() => {});
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 10_000).unref();
-}
-
-process.on("SIGTERM", () => void shutdown("SIGTERM"));
-process.on("SIGINT", () => void shutdown("SIGINT"));
-
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Dorizz community realtime listening on :${PORT}`);
-});
+export default server;
