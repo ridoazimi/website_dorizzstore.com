@@ -17,6 +17,8 @@ model Member {
   redemptions MemberRedemption[]
   withdrawals MemberWithdrawal[]
   notifications MemberNotification[]
+  communityMessages MemberCommunityMessage[]
+  communityRestriction MemberCommunityRestriction?
   @@map("members")
 }
 
@@ -182,9 +184,12 @@ model MemberCommunityMessage {
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
   deletedByAdminId String? @map("deleted_by_admin_id") @db.Uuid
   deleteReason String? @map("delete_reason")
-  @@index([createdAt, id], map: "member_community_messages_created_idx")
+  member Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  replyTo MemberCommunityMessage? @relation("MemberCommunityMessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies MemberCommunityMessage[] @relation("MemberCommunityMessageReplies")
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "member_community_messages_created_idx")
   @@index([replyToId], map: "member_community_messages_reply_idx")
-  @@index([memberId, createdAt], map: "member_community_messages_member_idx")
+  @@index([memberId, createdAt(sort: Desc)], map: "member_community_messages_member_idx")
   @@map("member_community_messages")
 }
 
@@ -195,6 +200,7 @@ model MemberCommunityRestriction {
   reason String?
   updatedByAdminId String? @map("updated_by_admin_id") @db.Uuid
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
   @@index([status, mutedUntil], map: "member_community_restrictions_status_idx")
   @@map("member_community_restrictions")
 }
