@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
-import { Loader2, MessageCircle, Reply, Send, ShieldCheck, Wifi, X } from "lucide-react";
+import type { FormEvent, KeyboardEvent } from "react";
+import { Loader2, MessageCircle, Reply, Send, Wifi, X } from "lucide-react";
 
 type Message = {
   id: string;
@@ -35,6 +35,7 @@ function cursor(m: Message) {
 export default function CommunityClient() {
   const ref = useRef<Message[]>([]);
   const bottom = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [ownMessageIds, setOwnMessageIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -71,6 +72,13 @@ export default function CommunityClient() {
         return next;
       }
     });
+  }
+
+  function resizeComposer() {
+    const element = inputRef.current;
+    if (!element) return;
+    element.style.height = "0px";
+    element.style.height = `${Math.min(element.scrollHeight, 120)}px`;
   }
 
   async function request(url: string, init?: RequestInit) {
@@ -131,6 +139,10 @@ export default function CommunityClient() {
     if (messages.length) bottom.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages.length]);
 
+  useEffect(() => {
+    resizeComposer();
+  }, [input]);
+
   const muted =
     restriction.status === "muted" &&
     !!restriction.mutedUntil &&
@@ -187,9 +199,21 @@ export default function CommunityClient() {
     }
   }
 
+  function handleComposerKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      !e.nativeEvent.isComposing &&
+      window.matchMedia("(pointer: fine)").matches
+    ) {
+      e.preventDefault();
+      e.currentTarget.form?.requestSubmit();
+    }
+  }
+
   return (
-    <div className="mx-auto flex h-[calc(100dvh-7.5rem)] min-h-[560px] max-w-5xl flex-col overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-[0_18px_55px_rgba(37,99,235,.08)]">
-      <header className="flex items-center justify-between gap-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-sky-50 px-4 py-4 md:px-5">
+    <div className="mx-auto flex h-[calc(100dvh-6.5rem)] min-h-0 max-w-5xl flex-col overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-[0_18px_55px_rgba(37,99,235,.08)] md:h-[calc(100dvh-7.5rem)] md:min-h-[560px]">
+      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-sky-50 px-4 py-4 md:px-5">
         <div className="flex items-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-blue-600 to-sky-400 text-white">
             <MessageCircle size={21} />
@@ -209,18 +233,13 @@ export default function CommunityClient() {
         </div>
       </header>
 
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-2.5 text-xs text-slate-500">
-        <ShieldCheck size={15} className="text-blue-500" />
-        Privasi aktif: tidak ada DM, daftar member, atau data kontak member.
-      </div>
-
       {muted && (
-        <div className="border-b border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Kamu bisa membaca chat, tetapi tidak bisa mengirim sampai <strong>{mutedText}</strong>.
         </div>
       )}
       {error && (
-        <div className="border-b border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="shrink-0 border-b border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
         </div>
       )}
@@ -321,34 +340,44 @@ export default function CommunityClient() {
         )}
       </section>
 
-      <form onSubmit={send} className="border-t border-slate-100 bg-white p-3 md:p-4">
+      <form
+        onSubmit={send}
+        className="shrink-0 border-t border-slate-200 bg-slate-100 px-2 py-2 pb-[max(.5rem,env(safe-area-inset-bottom))] md:px-3 md:py-3"
+      >
         {reply && (
-          <div className="mb-2 flex items-center justify-between rounded-lg bg-blue-50 px-3 py-2 text-xs text-slate-600">
-            <span>
+          <div className="mx-1 mb-2 flex items-center justify-between rounded-xl border-l-4 border-blue-500 bg-white px-3 py-2 text-xs text-slate-600 shadow-sm">
+            <span className="min-w-0 truncate">
               Membalas <b>{reply.senderName}</b>: {reply.body.slice(0, 80)}
             </span>
-            <button type="button" onClick={() => setReply(null)}>
-              <X size={14} />
+            <button type="button" onClick={() => setReply(null)} className="ml-2 shrink-0 text-slate-500">
+              <X size={16} />
             </button>
           </div>
         )}
-        <div className="flex gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={muted || sending}
-            rows={2}
-            placeholder={muted ? "Kamu sedang di-mute" : "Tulis pesan..."}
-            className="min-h-[48px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-base outline-none focus:border-blue-400 md:text-sm"
-          />
+
+        <div className="flex items-end gap-2">
+          <div className="flex min-h-11 flex-1 items-end rounded-[22px] border border-slate-200 bg-white shadow-sm focus-within:border-blue-300">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleComposerKeyDown}
+              disabled={muted || sending}
+              rows={1}
+              placeholder={muted ? "Kamu sedang di-mute" : "Tulis pesan"}
+              className="max-h-[120px] min-h-11 w-full resize-none overflow-y-auto bg-transparent px-4 py-[11px] text-base leading-[22px] text-slate-800 outline-none placeholder:text-slate-400 md:text-sm"
+            />
+          </div>
+
           <button
+            type="submit"
+            aria-label="Kirim pesan"
             disabled={!input.trim() || muted || sending}
-            className="grid w-12 place-items-center rounded-xl bg-blue-600 text-white disabled:opacity-40"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-blue-600 text-white shadow-sm transition active:scale-95 disabled:bg-slate-300 disabled:text-slate-500"
           >
-            {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+            {sending ? <Loader2 size={19} className="animate-spin" /> : <Send size={19} />}
           </button>
         </div>
-        <div className="mt-1 text-right text-[10px] text-slate-400">{[...input].length}/2000</div>
       </form>
     </div>
   );
