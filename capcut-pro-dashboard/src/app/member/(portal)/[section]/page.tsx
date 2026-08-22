@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import PortalPageClient from "../PortalPageClient";
 
-const sections = ["dashboard","referral","points","rewards","redemptions","withdrawals","leaderboard","notifications","activity","profile","help"] as const;
+const sections = ["dashboard","referral","points","rewards","redemptions","withdrawals","leaderboard","notifications","activity","help"] as const;
 
 type Section = typeof sections[number];
 
