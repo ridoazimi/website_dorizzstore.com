@@ -24,6 +24,7 @@ const items = [
 export default function MemberPortalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const communityPage = pathname === "/member/community";
   const [open,setOpen] = useState(false);
   const [profileOpen,setProfileOpen] = useState(false);
   const [profile,setProfile] = useState<any>(null);
@@ -48,11 +49,11 @@ export default function MemberPortalShell({ children }: { children: React.ReactN
     <div className="border-t border-slate-100 p-3"><button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"><LogOut size={17}/> Logout</button></div>
   </>;
 
-  return <div className="member-portal min-h-screen bg-[#f8fbff] text-slate-950">
+  return <div className={`member-portal bg-[#f8fbff] text-slate-950 ${communityPage ? "h-[100dvh] overflow-hidden" : "min-h-screen"}`}>
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-[248px] flex-col border-r border-blue-100 bg-white lg:flex">{nav}</aside>
     {open&&<div className="fixed inset-0 z-50 lg:hidden"><button aria-label="Tutup menu" onClick={()=>setOpen(false)} className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"/><aside className="relative flex h-full w-[290px] flex-col border-r border-blue-100 bg-white shadow-2xl shadow-slate-900/10">{nav}<button aria-label="Tutup menu" onClick={()=>setOpen(false)} className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500"><X size={18}/></button></aside></div>}
-    <div className="lg:pl-[248px]">
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-blue-100 bg-white/95 px-4 backdrop-blur md:px-6 lg:px-8">
+    <div className={communityPage ? "flex h-full min-h-0 flex-col lg:pl-[248px]" : "lg:pl-[248px]"}>
+      <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between border-b border-blue-100 bg-white/95 px-4 backdrop-blur md:px-6 lg:px-8">
         <button aria-label="Buka menu" onClick={()=>setOpen(true)} className="grid h-10 w-10 place-items-center rounded-lg border border-blue-100 bg-white text-slate-700 shadow-sm lg:hidden"><Menu size={18}/></button>
         <div className="hidden lg:block"><p className="text-sm font-bold text-slate-950">Member DorizzStore</p><p className="text-xs text-slate-400">Referral • Poin • Reward</p></div>
         <div className="relative flex items-center gap-2">
@@ -70,7 +71,7 @@ export default function MemberPortalShell({ children }: { children: React.ReactN
           </div>}
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1500px] px-4 py-5 md:px-6 md:py-7 lg:px-8">{children}</main>
+      <main className={communityPage ? "mx-auto min-h-0 w-full max-w-[1500px] flex-1 px-0 py-0 md:px-6 md:py-7 lg:px-8" : "mx-auto w-full max-w-[1500px] px-4 py-5 md:px-6 md:py-7 lg:px-8"}>{children}</main>
     </div>
     <style jsx global>{`
       .member-portal [class*="bg-[#111a2a]"] { background-color:#fff !important; border-color:#dbeafe !important; box-shadow:0 10px 35px rgba(37,99,235,.055); }
