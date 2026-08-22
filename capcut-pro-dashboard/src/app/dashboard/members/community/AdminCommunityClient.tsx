@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import { Ban, Loader2, MessageCircle, Reply, Send, ShieldAlert, Trash2, Undo2, VolumeX, Wifi, WifiOff, X } from "lucide-react";
 
 type AdminMessage = {
@@ -55,6 +56,7 @@ function ensureSocketClient(socketUrl: string) {
   return new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[data-community-socket="true"]`);
     if (existing) {
+      if (socketFactory()) return resolve();
       existing.addEventListener("load", () => resolve(), { once: true });
       existing.addEventListener("error", () => reject(new Error("Gagal memuat koneksi realtime")), { once: true });
       return;
@@ -134,15 +136,23 @@ export default function AdminCommunityClient() {
   }
 
   async function syncAfter(socket: CommunitySocket) {
-    let latest = messagesRef.current.at(-1);
+    let latest: AdminMessage | null = messagesRef.current.length
+      ? messagesRef.current[messagesRef.current.length - 1]
+      : null;
     if (!latest) return initialHistory(socket);
+
     for (let page = 0; page < 50; page += 1) {
-      const result = await emitAck<HistoryResponse>(socket, "history:list", { direction: "after", cursor: cursorOf(latest), limit: 100 });
+      const cursorMessage: AdminMessage = latest;
+      const result: HistoryResponse = await emitAck<HistoryResponse>(socket, "history:list", {
+        direction: "after",
+        cursor: cursorOf(cursorMessage),
+        limit: 100,
+      });
       if (!result.ok) throw new Error(result.error?.message || "Gagal menyinkronkan chat");
-      const incoming = result.messages || [];
+      const incoming: AdminMessage[] = result.messages ?? [];
       if (incoming.length) {
         mergeMessages(incoming);
-        latest = incoming.at(-1) || latest;
+        latest = incoming[incoming.length - 1] ?? latest;
       }
       if (!result.hasMore || !incoming.length) break;
     }
