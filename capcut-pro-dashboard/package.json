@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "check:community": "node --check services/community-realtime/server.mjs && node --check api/socket-io.mjs && node --check api/health.mjs",
+    "check:community": "node --check services/community-realtime/server.mjs && node --check services/community-realtime/api/socket-io.mjs && node --check services/community-realtime/api/health.mjs",
     "build": "npm run check:community && next build",
     "migrate:deploy": "prisma migrate deploy",
     "start": "next start",
@@ -37,7 +37,6 @@
     "react-quill-new": "^3.8.3",
     "recharts": "^3.8.0",
     "server-only": "^0.0.1",
-    "socket.io": "^4.8.1",
     "tailwind-merge": "^3.5.0",
     "xlsx": "^0.18.5"
   },
