@@ -122,20 +122,23 @@ export default function CommunityClient() {
   }
 
   async function syncAfter(socket: CommunitySocket) {
-    let latest = messagesRef.current.at(-1);
+    let latest: CommunityMessage | null = messagesRef.current.length
+      ? messagesRef.current[messagesRef.current.length - 1]
+      : null;
     if (!latest) return initialHistory(socket);
     for (let page = 0; page < 50; page += 1) {
-      const result = await emitAck<HistoryResponse>(socket, "history:list", {
+      const cursorMessage: CommunityMessage = latest;
+      const result: HistoryResponse = await emitAck<HistoryResponse>(socket, "history:list", {
         direction: "after",
-        cursor: cursorOf(latest),
+        cursor: cursorOf(cursorMessage),
         limit: 100,
       });
       if (!result.ok) throw new Error(result.error?.message || "Gagal menyinkronkan chat");
-      const incoming = result.messages || [];
+      const incoming: CommunityMessage[] = result.messages ?? [];
       if (incoming.length) {
         shouldScrollRef.current = true;
         mergeMessages(incoming);
-        latest = incoming.at(-1) || latest;
+        latest = incoming[incoming.length - 1] ?? latest;
       }
       if (!result.hasMore || !incoming.length) break;
     }
