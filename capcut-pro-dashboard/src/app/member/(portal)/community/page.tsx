@@ -1,5 +1,10 @@
 import CommunityClient from "./CommunityClient";
+import CommunityNotificationGate from "./CommunityNotificationGate";
 
 export default function MemberCommunityPage() {
-  return <CommunityClient />;
+  return (
+    <CommunityNotificationGate>
+      <CommunityClient />
+    </CommunityNotificationGate>
+  );
 }
