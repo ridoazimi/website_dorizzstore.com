@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "fluid": true,
+  "functions": {
+    "api/socket-io.mjs": {
+      "maxDuration": 300
+    },
+    "api/health.mjs": {
+      "maxDuration": 10
+    }
+  }
+}
