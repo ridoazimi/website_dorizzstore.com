@@ -6,16 +6,16 @@ import { jwtDecrypt } from "jose";
 
 const { Client, Pool } = pg;
 
-const DATABASE_URL = process.env.COMMUNITY_DATABASE_URL || process.env.DATABASE_URL;
-const LISTENER_DATABASE_URL = process.env.COMMUNITY_LISTENER_DATABASE_URL || process.env.DIRECT_URL || DATABASE_URL;
+const DATABASE_URL = process.env.COMMUNITY_DATABASE_URL;
+const LISTENER_DATABASE_URL = process.env.COMMUNITY_LISTENER_DATABASE_URL;
 const COMMUNITY_SECRET = process.env.COMMUNITY_JWT_SECRET;
 const allowedOrigins = String(process.env.COMMUNITY_ALLOWED_ORIGINS || "")
   .split(",")
   .map((value) => value.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
-if (!DATABASE_URL) throw new Error("COMMUNITY_DATABASE_URL or DATABASE_URL is required");
-if (!LISTENER_DATABASE_URL) throw new Error("COMMUNITY_LISTENER_DATABASE_URL or DIRECT_URL is required");
+if (!DATABASE_URL) throw new Error("COMMUNITY_DATABASE_URL is required");
+if (!LISTENER_DATABASE_URL) throw new Error("COMMUNITY_LISTENER_DATABASE_URL is required");
 if (!COMMUNITY_SECRET) throw new Error("COMMUNITY_JWT_SECRET is required");
 if (!allowedOrigins.length) throw new Error("COMMUNITY_ALLOWED_ORIGINS is required");
 
