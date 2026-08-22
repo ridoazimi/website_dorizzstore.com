@@ -67,12 +67,19 @@ export async function listMessages(input: { direction?: string; cursorId?: strin
     rows = await prisma.$queryRawUnsafe<Row[]>(`${MESSAGE_SELECT} ORDER BY m.created_at DESC,m.id DESC LIMIT $1`, limit + 1);
   } else {
     if (!isUuid(input.cursorId) || !input.cursorAt || Number.isNaN(new Date(input.cursorAt).getTime())) throw new Error("BAD_CURSOR");
-    const op = direction === "before" ? "<" : ">";
-    const order = direction === "before" ? "DESC" : "ASC";
-    rows = await prisma.$queryRawUnsafe<Row[]>(
-      `${MESSAGE_SELECT} WHERE (m.created_at,m.id) ${op} ($1::timestamptz,$2::uuid) ORDER BY m.created_at ${order},m.id ${order} LIMIT $3`,
-      input.cursorAt, input.cursorId, limit + 1
-    );
+    if (direction === "after") {
+      // Re-read the cursor timestamp so simultaneous inserts cannot fall behind a random UUID tie-breaker.
+      // The client merges by message id, so re-reading the last timestamp is safe and prevents polling gaps.
+      rows = await prisma.$queryRawUnsafe<Row[]>(
+        `${MESSAGE_SELECT} WHERE m.created_at >= $1::timestamptz ORDER BY m.created_at ASC,m.id ASC LIMIT $2`,
+        input.cursorAt, limit + 1
+      );
+    } else {
+      rows = await prisma.$queryRawUnsafe<Row[]>(
+        `${MESSAGE_SELECT} WHERE (m.created_at,m.id) < ($1::timestamptz,$2::uuid) ORDER BY m.created_at DESC,m.id DESC LIMIT $3`,
+        input.cursorAt, input.cursorId, limit + 1
+      );
+    }
   }
   const hasMore = rows.length > limit;
   rows = rows.slice(0, limit);
