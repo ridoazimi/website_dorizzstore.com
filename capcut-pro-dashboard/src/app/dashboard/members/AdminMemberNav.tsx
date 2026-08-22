@@ -1,11 +1,12 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Gift, LayoutDashboard, Medal, Settings2, Sparkles, Users, WalletCards, BadgeDollarSign } from "lucide-react";
+import { Activity, Gift, LayoutDashboard, Medal, MessageCircle, Settings2, Sparkles, Users, WalletCards, BadgeDollarSign } from "lucide-react";
 
 const items = [
   ["/dashboard/members","Overview",LayoutDashboard],
   ["/dashboard/members/list","Member List",Users],
+  ["/dashboard/members/community","Komunitas",MessageCircle],
   ["/dashboard/members/rewards","Reward",Gift],
   ["/dashboard/members/redemptions","Redemption",Sparkles],
   ["/dashboard/members/withdrawals","Withdrawal",WalletCards],
