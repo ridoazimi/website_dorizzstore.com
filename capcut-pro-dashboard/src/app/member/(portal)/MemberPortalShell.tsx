@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Activity, Bell, CircleHelp, Gift, KeyRound, LayoutDashboard, LogOut, Mail, Menu, Medal, Phone, ShieldCheck, Sparkles, UserRound, Users, WalletCards, X } from "lucide-react";
+import { Activity, Bell, CircleHelp, Gift, KeyRound, LayoutDashboard, LogOut, Mail, Menu, Medal, MessageCircle, Phone, ShieldCheck, Sparkles, UserRound, Users, WalletCards, X } from "lucide-react";
 
 const items = [
   ["/member/dashboard","Dashboard",LayoutDashboard],
+  ["/member/community","Komunitas",MessageCircle],
   ["/member/referral","Referral",Users],
   ["/member/points","Poin",Sparkles],
   ["/member/rewards","Reward",Gift],
