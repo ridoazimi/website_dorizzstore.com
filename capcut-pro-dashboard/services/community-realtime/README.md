@@ -1,106 +1,108 @@
 # DorizzStore Member Community Realtime
 
-Backend realtime untuk UI `https://dorizzstore.com/member/community`. Service ini tidak memiliki UI publik dan tidak menyediakan DM, member directory, member search, atau private room.
+Backend realtime untuk UI `https://dorizzstore.com/member/community`. Service ini dideploy sebagai project Vercel terpisah dari folder `services/community-realtime`, tetapi tidak memiliki UI publik dan tidak menjadi platform terpisah bagi member.
 
-## Environment
+Service hanya menyediakan satu grup Member DorizzStore. Tidak ada DM, member directory, member search, arbitrary room, atau private room.
+
+## Arsitektur
+
+```text
+dorizzstore.com/member/community
+        |
+        | token komunitas JWE
+        v
+Vercel realtime service (Socket.IO / WebSocket only)
+        |
+        +--> Neon pooled connection untuk query
+        |
+        +--> Neon direct connection LISTEN/NOTIFY untuk event antar-instance
+```
+
+Vercel dapat menjalankan lebih dari satu function instance. Karena itu broadcast tidak hanya memakai memory satu instance. Event `message:new`, `message:deleted`, dan perubahan restriction dipublikasikan melalui PostgreSQL `LISTEN/NOTIFY`, lalu masing-masing instance meneruskannya ke socket yang sedang terhubung pada instance tersebut.
+
+## Vercel project
+
+Buat project Vercel dengan Root Directory:
+
+```text
+capcut-pro-dashboard/services/community-realtime
+```
+
+Fluid Compute diaktifkan melalui `vercel.json`. Socket.IO hanya menerima transport WebSocket.
+
+Endpoint publik yang dipakai:
+
+```text
+/socket.io/*  -> Vercel Function api/socket-io.mjs
+/health       -> Vercel Function api/health.mjs
+```
+
+Domain teknis yang disarankan:
+
+```text
+https://chat.dorizzstore.com
+```
+
+Member tetap hanya membuka `https://dorizzstore.com/member/community`.
+
+## Environment realtime service
 
 ```bash
-PORT=3001
-COMMUNITY_JWT_SECRET=<secret-yang-sama-dengan-aplikasi-web>
-COMMUNITY_DATABASE_URL=<postgres/neon-connection-string>
+COMMUNITY_JWT_SECRET=<secret-yang-sama-dengan-web-app>
+COMMUNITY_DATABASE_URL=<Neon pooled connection string>
+COMMUNITY_LISTENER_DATABASE_URL=<Neon direct/non-pooled connection string>
 COMMUNITY_ALLOWED_ORIGINS=https://dorizzstore.com,https://www.dorizzstore.com
 ```
 
-`COMMUNITY_JWT_SECRET` wajib berbeda dari `JWT_SECRET` login utama. Token komunitas menggunakan JWE `A256GCM`, sehingga internal member/admin ID tidak terlihat saat token berada di browser.
+`COMMUNITY_JWT_SECRET` wajib berbeda dari `JWT_SECRET` login utama. Token komunitas menggunakan JWE `A256GCM`, sehingga ID internal member/admin tidak terlihat saat token berada di browser.
 
-## Install dan jalankan
+`COMMUNITY_LISTENER_DATABASE_URL` harus menggunakan koneksi direct/non-pooled karena PostgreSQL `LISTEN` membutuhkan koneksi session yang tetap.
+
+## Web app environment
+
+Aplikasi Next.js DorizzStore membutuhkan:
 
 ```bash
-cd services/community-realtime
-npm install --omit=dev
+COMMUNITY_JWT_SECRET=<secret-yang-sama-dengan-realtime-service>
+COMMUNITY_SOCKET_URL=https://chat.dorizzstore.com
+```
+
+Tidak ada `NEXT_PUBLIC` secret. Browser hanya menerima URL socket dan token komunitas berumur pendek dari endpoint auth DorizzStore.
+
+## Checks
+
+Syntax check service:
+
+```bash
 npm run check
-npm start
 ```
 
-Health check:
+Setelah preview/deployment realtime tersedia, health check harus mengembalikan status sehat:
 
 ```bash
-curl -fsS http://127.0.0.1:3001/health
+curl -fsS https://<realtime-preview-or-domain>/health
 ```
 
-Response sehat:
+Expected:
 
 ```json
 {"ok":true,"database":true}
 ```
 
-## Reverse proxy
+Smoke test realtime minimal:
 
-Contoh Nginx untuk `chat.dorizzstore.com`:
+1. Member A dan Member B membuka `/member/community`.
+2. A mengirim pesan; B menerima tanpa refresh.
+3. Putuskan koneksi B lalu kirim pesan dari A; setelah reconnect, B mengambil gap dari history.
+4. Admin delete/mute/ban harus terlihat pada koneksi yang berada di instance berbeda juga.
+5. Tidak ada event atau endpoint member list/search/DM.
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name chat.dorizzstore.com;
+## Tidak digunakan
 
-    location /health {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_set_header Host $host;
-    }
+Deployment ini tidak membutuhkan:
 
-    location /socket.io/ {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_read_timeout 65s;
-    }
-
-    location / {
-        return 404;
-    }
-}
-```
-
-## systemd
-
-Contoh unit `/etc/systemd/system/dorizz-community.service`:
-
-```ini
-[Unit]
-Description=DorizzStore Member Community Realtime
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/dorizz-community
-EnvironmentFile=/etc/dorizz-community.env
-ExecStart=/usr/bin/node server.mjs
-Restart=always
-RestartSec=3
-User=www-data
-Group=www-data
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Setelah file dan environment tersedia:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now dorizz-community
-sudo systemctl status dorizz-community
-```
-
-## Web app
-
-Environment yang dibutuhkan oleh aplikasi Next.js:
-
-```bash
-COMMUNITY_JWT_SECRET=<secret-yang-sama-dengan-service>
-COMMUNITY_SOCKET_URL=https://chat.dorizzstore.com
-```
-
-Member tetap mengakses komunitas hanya dari `dorizzstore.com/member/community`. `chat.dorizzstore.com` adalah transport realtime di belakang layar.
+- VPS
+- Nginx
+- systemd
+- Redis
+- server yang dikelola manual
