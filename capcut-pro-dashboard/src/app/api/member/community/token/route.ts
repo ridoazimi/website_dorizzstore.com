@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getMember } from "@/lib/member";
 import { getCommunitySocketUrl, signCommunityToken } from "@/lib/member-community";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const session = await getMember();
     if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -26,7 +26,7 @@ export async function POST() {
       return NextResponse.json({ error: "Akses komunitas kamu dibatasi" }, { status: 403 });
     }
 
-    const socketUrl = getCommunitySocketUrl();
+    const socketUrl = getCommunitySocketUrl(new URL(request.url).origin);
     if (!socketUrl) {
       return NextResponse.json({ error: "Layanan komunitas belum dikonfigurasi" }, { status: 503 });
     }
