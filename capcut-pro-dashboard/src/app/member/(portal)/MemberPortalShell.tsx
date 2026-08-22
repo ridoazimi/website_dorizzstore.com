@@ -14,7 +14,6 @@ const items = [
   ["/member/redemptions","Penukaran Saya",Gift],
   ["/member/withdrawal","Withdrawal",WalletCards],
   ["/member/leaderboard","Leaderboard",Medal],
-  ["/member/notifications","Notifikasi",Bell],
   ["/member/activity","Riwayat Aktivitas",Activity],
   ["/member/profile","Profil & Keamanan",UserRound],
   ["/member/help","Bantuan / Cara Kerja",CircleHelp],
