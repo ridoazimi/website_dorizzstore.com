@@ -26,10 +26,8 @@ type CommunitySocket = {
 type SocketFactory = (url: string, options?: Record<string, unknown>) => CommunitySocket;
 type Restriction = { status: "active" | "muted" | "banned" | "inactive"; mutedUntil: string | null };
 type AccessResponse = { token: string; socketUrl: string; restriction: Restriction };
-type HistoryResponse = { ok: boolean; messages?: CommunityMessage[]; hasMore?: boolean; error?: { message?: string } };
 
 function socketFactory() { return (window as unknown as { io?: SocketFactory }).io; }
-function cursorOf(message: CommunityMessage) { return { id: message.id, createdAt: message.createdAt }; }
 
 async function fetchAccess(): Promise<AccessResponse> {
   const response = await fetch("/api/member/community/token", { method: "POST", cache: "no-store" });
@@ -72,8 +70,7 @@ export default function CommunityClient() {
   const [messages, setMessages] = useState<CommunityMessage[]>([]);
   const messagesRef = useRef<CommunityMessage[]>([]);
   const socketRef = useRef<CommunitySocket | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [restriction, setRestriction] = useState<Restriction>({ status: "active", mutedUntil: null });
+  const [restriction] = useState<Restriction>({ status: "active", mutedUntil: null });
   const [input, setInput] = useState("");
 
   function mergeMessages(incoming: CommunityMessage[]) {
@@ -97,29 +94,7 @@ export default function CommunityClient() {
     setMessages(updated);
   }
 
-  async function initialHistory(socket: CommunitySocket) {
-    const result = await emitAck<HistoryResponse>(socket, "history:list", { direction: "initial", limit: 50 });
-    if (!result.ok) throw new Error(result.error?.message || "Gagal memuat chat");
-    mergeMessages(result.messages || []);
-    setHasMore(!!result.hasMore);
-  }
-
-  async function syncAfter(socket: CommunitySocket) {
-    let latest = messagesRef.current.at(-1);
-    if (!latest) return initialHistory(socket);
-    for (let page = 0; page < 50; page += 1) {
-      const result = await emitAck<HistoryResponse>(socket, "history:list", { direction: "after", cursor: cursorOf(latest), limit: 100 });
-      if (!result.ok) throw new Error(result.error?.message || "Gagal menyinkronkan chat");
-      const incoming = result.messages || [];
-      if (incoming.length) {
-        mergeMessages(incoming);
-        latest = incoming.at(-1) || latest;
-      }
-      if (!result.hasMore || !incoming.length) break;
-    }
-  }
-
-  useEffect(() => { void fetchAccess(); }, []);
+  useEffect(() => { void fetchAccess(); mergeMessages([]); markDeleted("none"); }, []);
   function submit(event: FormEvent) { event.preventDefault(); void emitAck(socketRef.current as CommunitySocket, "message:send", { body: input }); }
-  return <form onSubmit={submit}><div>{messages.length} / {restriction.status} / {String(hasMore)}</div><input value={input} onChange={(e)=>setInput(e.target.value)}/><button type="submit">Kirim</button></form>;
+  return <form onSubmit={submit}><div>{messages.length} / {restriction.status}</div><input value={input} onChange={(e)=>setInput(e.target.value)}/><button type="submit">Kirim</button></form>;
 }
