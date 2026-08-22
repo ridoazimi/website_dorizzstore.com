@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import { Loader2, MessageCircle, Reply, Send, ShieldCheck, Wifi, WifiOff, X } from "lucide-react";
 
 type CommunityMessage = {
@@ -18,34 +19,21 @@ type CommunitySocket = {
   connected: boolean;
   auth: Record<string, unknown>;
   on: (event: string, callback: (...args: any[]) => void) => CommunitySocket;
-  off: (event: string, callback?: (...args: any[]) => void) => CommunitySocket;
   emit: (event: string, ...args: any[]) => CommunitySocket;
   connect: () => CommunitySocket;
   disconnect: () => CommunitySocket;
 };
 
-declare global {
-  interface Window {
-    io?: (url: string, options?: Record<string, unknown>) => CommunitySocket;
-  }
-}
-
+type SocketFactory = (url: string, options?: Record<string, unknown>) => CommunitySocket;
 type Restriction = { status: "active" | "muted" | "banned" | "inactive"; mutedUntil: string | null };
-
-type AccessResponse = {
-  token: string;
-  socketUrl: string;
-  restriction: Restriction;
-};
-
-type HistoryResponse = {
-  ok: boolean;
-  messages?: CommunityMessage[];
-  hasMore?: boolean;
-  error?: { message?: string };
-};
+type AccessResponse = { token: string; socketUrl: string; restriction: Restriction };
+type HistoryResponse = { ok: boolean; messages?: CommunityMessage[]; hasMore?: boolean; error?: { message?: string } };
 
 const timeFmt = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit" });
+
+function socketFactory() {
+  return (window as unknown as { io?: SocketFactory }).io;
+}
 
 function cursorOf(message: CommunityMessage) {
   return { id: message.id, createdAt: message.createdAt };
@@ -59,18 +47,17 @@ async function fetchAccess(): Promise<AccessResponse> {
 }
 
 function ensureSocketClient(socketUrl: string) {
-  if (window.io) return Promise.resolve();
+  if (socketFactory()) return Promise.resolve();
   return new Promise<void>((resolve, reject) => {
-    const src = `${socketUrl.replace(/\/$/, "")}/socket.io/socket.io.js`;
-    const existing = document.querySelector<HTMLScriptElement>(`script[data-community-socket="true"]`);
+    const existing = document.querySelector<HTMLScriptElement>('script[data-community-socket="true"]');
     if (existing) {
-      if (window.io) return resolve();
+      if (socketFactory()) return resolve();
       existing.addEventListener("load", () => resolve(), { once: true });
       existing.addEventListener("error", () => reject(new Error("Gagal memuat koneksi realtime")), { once: true });
       return;
     }
     const script = document.createElement("script");
-    script.src = src;
+    script.src = `${socketUrl.replace(/\/$/, "")}/socket.io/socket.io.js`;
     script.async = true;
     script.dataset.communitySocket = "true";
     script.onload = () => resolve();
@@ -166,9 +153,10 @@ export default function CommunityClient() {
         if (disposed) return;
         setRestriction(access.restriction);
         await ensureSocketClient(access.socketUrl);
-        if (disposed || !window.io) return;
+        const io = socketFactory();
+        if (disposed || !io) return;
 
-        socket = window.io(access.socketUrl, {
+        socket = io(access.socketUrl, {
           auth: { token: access.token },
           transports: ["websocket", "polling"],
           reconnection: true,
@@ -224,9 +212,7 @@ export default function CommunityClient() {
           shouldScrollRef.current = true;
           mergeMessages([message]);
         });
-
         socket.on("message:deleted", ({ messageId }: { messageId: string }) => markDeleted(messageId));
-
         socket.on("restriction:changed", (next: Restriction) => {
           setRestriction(next);
           if (next.status === "banned") setError("Akses komunitas kamu dibatasi oleh admin.");
@@ -256,10 +242,9 @@ export default function CommunityClient() {
   }, [messages.length]);
 
   const muted = restriction.status === "muted" && !!restriction.mutedUntil && new Date(restriction.mutedUntil).getTime() > Date.now();
-  const mutedText = useMemo(() => {
-    if (!muted || !restriction.mutedUntil) return "";
-    return new Date(restriction.mutedUntil).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-  }, [muted, restriction.mutedUntil]);
+  const mutedText = muted && restriction.mutedUntil
+    ? new Date(restriction.mutedUntil).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })
+    : "";
 
   async function loadOlder() {
     const socket = socketRef.current;
@@ -337,7 +322,6 @@ export default function CommunityClient() {
     </header>
 
     <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-2.5 text-xs text-slate-500"><ShieldCheck size={15} className="text-blue-500"/><span>Privasi aktif: tidak ada DM, daftar member, atau data kontak member.</span></div>
-
     {muted&&<div className="border-b border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">Kamu bisa membaca chat, tetapi tidak bisa mengirim pesan sampai <strong>{mutedText}</strong>.</div>}
     {error&&<div role="alert" className="border-b border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
