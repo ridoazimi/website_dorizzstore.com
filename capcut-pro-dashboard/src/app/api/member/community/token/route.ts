@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 import { getMember } from "@/lib/member";
 import { getActiveMember, listMessages, sendMessage } from "@/lib/member-community-db";
 
@@ -10,16 +11,28 @@ async function actor() {
   return { session, state };
 }
 
+async function avatarMap(messageIds: string[]) {
+  if (!messageIds.length) return new Map<string,string|null>();
+  const rows = await prisma.$queryRawUnsafe<Array<{ id:string; avatar_url:string|null }>>(
+    `SELECT c.id,m.avatar_url FROM member_community_messages c LEFT JOIN members m ON m.id=c.member_id WHERE c.id = ANY($1::uuid[])`,
+    messageIds
+  );
+  return new Map(rows.map((row) => [row.id, row.avatar_url || null]));
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await actor();
     if ("error" in auth) return auth.error;
     const q = request.nextUrl.searchParams;
     const result = await listMessages({ direction: q.get("direction") || "initial", cursorId: q.get("cursorId"), cursorAt: q.get("cursorAt"), limit: Number(q.get("limit") || 50) });
+    const avatars = await avatarMap(result.messages.map((message:any) => message.id));
+    const messages = result.messages.map((message:any) => ({ ...message, senderAvatarUrl: message.isAdmin ? null : (avatars.get(message.id) || null) }));
+    const selfRows = await prisma.$queryRawUnsafe<Array<{ avatar_url:string|null }>>(`SELECT avatar_url FROM members WHERE id=$1::uuid LIMIT 1`, auth.session.id);
     const restriction = auth.state.member.community_status === "muted" && auth.state.member.muted_until
       ? { status: "muted", mutedUntil: new Date(auth.state.member.muted_until).toISOString() }
       : { status: "active", mutedUntil: null };
-    return NextResponse.json({ ok: true, ...result, restriction }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, ...result, messages, restriction, self: { name: auth.state.member.name, avatarUrl: selfRows[0]?.avatar_url || null } }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Member community history error", error);
     return NextResponse.json({ error: "Gagal memuat komunitas" }, { status: 500 });
