@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import * as XLSX from "xlsx";
 import Topbar from "@/components/Topbar";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePrivacy } from "@/context/PrivacyContext";
 import {
   Plus,
@@ -124,6 +124,7 @@ export default function TransactionsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 400);
   const [statusFilter, setStatusFilter] = useState("Semua");
   const [sourceFilter, setSourceFilter] = useState("Semua");
   // Filter tanggal transaksi
@@ -244,7 +245,7 @@ export default function TransactionsPage() {
     else setLoading(true);
 
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     if (statusFilter !== "Semua") params.set("status", statusFilter);
     if (sourceFilter !== "Semua") params.set("source", sourceFilter);
     if (startDate) params.set("startDate", startDate);
@@ -271,7 +272,7 @@ export default function TransactionsPage() {
         if (append) setLoadingMore(false);
         else setLoading(false);
       });
-  }, [search, statusFilter, sourceFilter, startDate, endDate, warrantyStartDate, warrantyEndDate]);
+  }, [debouncedSearch, statusFilter, sourceFilter, startDate, endDate, warrantyStartDate, warrantyEndDate]);
 
   // Fresh load saat filter berubah
   useEffect(() => {
@@ -515,6 +516,7 @@ export default function TransactionsPage() {
       if (rows.length === 0) throw new Error("File CSV kosong atau hanya header.");
       return rows;
     } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+      const XLSX = await import("xlsx");
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
       const firstSheetName = workbook.SheetNames[0];

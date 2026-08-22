@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Topbar from "@/components/Topbar";
 import { usePrivacy } from "@/context/PrivacyContext";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import {
   Search,
   ShieldCheck,
@@ -64,6 +65,7 @@ export default function WarrantyDashboardPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 400);
   const [showClaimModal, setShowClaimModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [claimForm, setClaimForm] = useState({ transactionId: "", claimReason: "" });
@@ -86,13 +88,13 @@ export default function WarrantyDashboardPage() {
   const fetchData = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     fetch(`/api/warranty?${params}`)
       .then((res) => res.json())
       .then((json) => { setClaims(json.claims || []); setTotal(json.total || 0); })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [search]);
+  }, [debouncedSearch]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 

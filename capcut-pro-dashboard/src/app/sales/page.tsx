@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Topbar from "@/components/Topbar";
 import { usePrivacy } from "@/context/PrivacyContext";
 import { useTheme } from "@/context/ThemeContext";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import {
   Plus,
   Search,
@@ -67,6 +68,7 @@ export default function SalesPage() {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 400);
   const [sortBy, setSortBy] = useState<SortOption>("newest");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -93,7 +95,7 @@ export default function SalesPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (search) params.set("search", search);
+      if (debouncedSearch) params.set("search", debouncedSearch);
       if (selectedCategory) params.set("category", selectedCategory);
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
@@ -108,7 +110,7 @@ export default function SalesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, selectedCategory, startDate, endDate]);
+  }, [debouncedSearch, selectedCategory, startDate, endDate]);
 
   useEffect(() => {
     fetchSales();

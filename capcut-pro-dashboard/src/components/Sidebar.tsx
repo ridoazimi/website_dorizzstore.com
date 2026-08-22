@@ -124,9 +124,9 @@ export default function Sidebar() {
   const [activeConversationTitle, setActiveConversationTitle] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const fetchPendingWarrantyCount = async () => {
       try {
-        const res = await fetch("/api/stats");
+        const res = await fetch("/api/warranty/pending-count");
         const data = await readJsonResponse(res);
         const count = data.pendingWarrantyClaims;
         if (typeof count === "number") setPendingClaimsCount(count);
@@ -135,8 +135,8 @@ export default function Sidebar() {
       }
     };
 
-    fetchStats();
-    const interval = setInterval(fetchStats, 5 * 60 * 1000);
+    fetchPendingWarrantyCount();
+    const interval = setInterval(fetchPendingWarrantyCount, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 

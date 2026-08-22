@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Topbar from "@/components/Topbar";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import {
   Plus,
   Search,
@@ -289,6 +290,7 @@ export default function StockPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebouncedValue(search, 400);
   const [statusFilter, setStatusFilter] = useState("Semua");
   const [productTypeFilter, setProductTypeFilter] = useState("Semua"); // still used for Mobile/Desktop cards
   const [productIdFilter, setProductIdFilter] = useState("Semua");
@@ -340,7 +342,7 @@ export default function StockPage() {
     else setLoading(true);
 
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (debouncedSearch) params.set("search", debouncedSearch);
     if (statusFilter !== "Semua") params.set("status", statusFilter);
     if (productIdFilter !== "Semua") params.set("productId", productIdFilter);
     if (productTypeFilter !== "Semua") params.set("productType", productTypeFilter);
@@ -408,19 +410,21 @@ export default function StockPage() {
         if (append) setLoadingMore(false);
         else setLoading(false);
       });
-  }, [search, statusFilter, productIdFilter, productTypeFilter, usageTypeFilter]);
+  }, [debouncedSearch, statusFilter, productIdFilter, productTypeFilter, usageTypeFilter]);
 
   useEffect(() => {
     setPage(1);
     setHasMore(true);
     fetchData(1, false);
+  }, [fetchData]);
 
-    // Fetch products for dropdown
+  // Product options are static for the lifetime of this page; do not refetch on every filter/search change.
+  useEffect(() => {
     fetch("/api/products/list")
       .then(res => res.json())
       .then(json => setProducts(json.products || []))
       .catch(err => console.error("Error fetching products:", err));
-  }, [fetchData]);
+  }, []);
 
   function handleLoadMore() {
     const next = page + 1;
