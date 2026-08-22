@@ -30,10 +30,20 @@ function ownIds() {
   }
 }
 
+function isIOS() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function isStandalone() {
+  const iosStandalone = "standalone" in navigator && Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+  return window.matchMedia("(display-mode: standalone)").matches || iosStandalone;
+}
+
 export default function CommunityNotificationGate({ children }: { children: ReactNode }) {
   const [permission, setPermission] = useState<PermissionState>("checking");
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState("");
+  const [iosBrowser, setIosBrowser] = useState(false);
   const cursor = useRef<{ id: string; createdAt: string } | null>(null);
   const initialized = useRef(false);
 
@@ -43,6 +53,12 @@ export default function CommunityNotificationGate({ children }: { children: Reac
   }, []);
 
   const refreshPermission = useCallback(() => {
+    const iosSafariBrowser = isIOS() && !isStandalone();
+    setIosBrowser(iosSafariBrowser);
+    if (iosSafariBrowser) {
+      setPermission("checking");
+      return false;
+    }
     if (!("Notification" in window) || !("serviceWorker" in navigator)) {
       setPermission("unsupported");
       return false;
@@ -128,6 +144,27 @@ export default function CommunityNotificationGate({ children }: { children: Reac
 
   if (permission === "granted") return <>{children}</>;
 
+  if (iosBrowser) {
+    return (
+      <div className="mx-auto grid min-h-[65vh] max-w-xl place-items-center px-4 py-10">
+        <div className="w-full rounded-2xl border border-blue-100 bg-white p-6 text-center shadow-sm">
+          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-blue-50 text-xl">📲</div>
+          <h1 className="text-lg font-black text-slate-950">Tambahkan DorizzStore ke Layar Utama</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Di iPhone, notifikasi Community hanya bisa diaktifkan dari DorizzStore yang dibuka sebagai aplikasi di Home Screen.
+          </p>
+          <div className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-left text-sm leading-6 text-slate-700">
+            <p><strong>1.</strong> Tekan tombol <strong>Bagikan</strong> di Safari.</p>
+            <p><strong>2.</strong> Pilih <strong>Tambahkan ke Layar Utama</strong>.</p>
+            <p><strong>3.</strong> Buka DorizzStore dari ikon di Home Screen.</p>
+            <p><strong>4.</strong> Masuk Community lalu tekan <strong>Izinkan Notifikasi</strong>.</p>
+          </div>
+          <p className="mt-4 text-xs text-slate-500">Community tetap dikunci sampai notifikasi diizinkan.</p>
+        </div>
+      </div>
+    );
+  }
+
   const denied = permission === "denied";
   const unsupported = permission === "unsupported";
 
@@ -141,12 +178,12 @@ export default function CommunityNotificationGate({ children }: { children: Reac
         </p>
         {denied && (
           <p className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-            Notifikasi sedang diblokir. Buka pengaturan situs di browser, ubah izin Notifikasi menjadi Izinkan, lalu tekan Cek Lagi.
+            Notifikasi sedang diblokir. Buka pengaturan DorizzStore di perangkat/browser, izinkan Notifikasi, lalu tekan Cek Lagi.
           </p>
         )}
         {unsupported && (
           <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">
-            Browser ini belum mendukung notifikasi yang dibutuhkan Community. Gunakan browser modern yang mendukung notifikasi situs.
+            Perangkat atau browser ini belum menyediakan izin notifikasi untuk DorizzStore.
           </p>
         )}
         {error && <p className="mt-4 text-xs text-rose-600">{error}</p>}
