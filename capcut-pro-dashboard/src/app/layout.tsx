@@ -10,12 +10,6 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://dorizzstore.com"),
   title: "Dorizz Store Dashboard",
   description: "Dashboard Pengelola Dorizz Store - Manajemen Transaksi, Pelanggan, dan Stok Akun",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    title: "DorizzStore",
-    statusBarStyle: "default",
-  },
 };
 
 export default function RootLayout({
