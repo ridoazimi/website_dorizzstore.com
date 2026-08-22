@@ -43,7 +43,7 @@ export default function MemberPortalShell({ children }: { children: React.ReactN
       </Link>
     </div>
     <nav className="flex-1 space-y-1 px-3 pb-4">
-      {items.map(([href,label,Icon])=>{ const active=pathname===href; return <Link key={href} href={href} onClick={()=>setOpen(false)} className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${active?"bg-gradient-to-r from-blue-600 to-sky-400 text-white shadow-[0_8px_24px_rgba(37,99,235,.16)]":"text-slate-500 hover:bg-blue-50 hover:text-blue-700"}`}><Icon size={17}/><span className="flex-1">{label}</span>{label==="Notifikasi"&&unread>0&&<span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${active?"bg-white/20 text-white":"bg-blue-100 text-blue-700"}`}>{unread}</span>}</Link>})}
+      {items.map(([href,label,Icon])=>{ const active=pathname===href; return <Link key={href} href={href} onClick={()=>setOpen(false)} className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${active?"bg-gradient-to-r from-blue-600 to-sky-400 text-white shadow-[0_8px_24px_rgba(37,99,235,.16)]":"text-slate-500 hover:bg-blue-50 hover:text-blue-700"}`}><Icon size={17}/><span className="flex-1">{label}</span></Link>})}
     </nav>
     <div className="border-t border-slate-100 p-3"><button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"><LogOut size={17}/> Logout</button></div>
   </>;
