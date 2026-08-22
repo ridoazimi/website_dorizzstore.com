@@ -119,7 +119,8 @@ export default function CommunityClient() {
     }
   }
 
+  void syncAfter;
   useEffect(() => { void fetchAccess(); mergeMessages([]); markDeleted("none"); void initialHistory(socketRef.current as CommunitySocket); }, []);
-  function submit(event: FormEvent) { event.preventDefault(); void emitAck(socketRef.current as CommunitySocket, "message:send", { body: input }); void syncAfter(socketRef.current as CommunitySocket); }
+  function submit(event: FormEvent) { event.preventDefault(); void emitAck(socketRef.current as CommunitySocket, "message:send", { body: input }); }
   return <form onSubmit={submit}><div>{messages.length} / {restriction.status} / {String(hasMore)}</div><input value={input} onChange={(e)=>setInput(e.target.value)}/><button type="submit">Kirim</button></form>;
 }
