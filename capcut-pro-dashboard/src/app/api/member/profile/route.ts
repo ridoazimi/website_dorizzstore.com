@@ -1,6 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getMember, hashMemberPassword, normalizeWhatsapp, verifyMemberPassword } from "@/lib/member";
+import { uploadMedia } from "@/lib/upload";
+
+export async function POST(req: Request) {
+  const member = await getMember();
+  if (!member) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const form = await req.formData();
+  const file = form.get("avatar");
+  if (!(file instanceof File) || !file.size) return NextResponse.json({ error: "Pilih foto terlebih dahulu" }, { status: 400 });
+  if (file.size > 5 * 1024 * 1024) return NextResponse.json({ error: "Ukuran foto maksimal 5 MB" }, { status: 400 });
+  if (!["image/jpeg","image/png","image/webp"].includes(file.type)) return NextResponse.json({ error: "Format foto harus JPG, PNG, atau WebP" }, { status: 400 });
+  const avatarUrl = await uploadMedia(file, `member-avatars/${member.id}`);
+  await prisma.$executeRawUnsafe(`UPDATE members SET avatar_url=$2,updated_at=now() WHERE id=$1::uuid AND status='active'`, member.id, avatarUrl);
+  return NextResponse.json({ success: true, avatarUrl, message: "Foto profil berhasil diperbarui." });
+}
 
 export async function PATCH(req: Request) {
   const member = await getMember();
