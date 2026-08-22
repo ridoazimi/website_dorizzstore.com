@@ -339,7 +339,7 @@ export default function CommunityClient() {
             disabled={muted || sending}
             rows={2}
             placeholder={muted ? "Kamu sedang di-mute" : "Tulis pesan..."}
-            className="min-h-[48px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+            className="min-h-[48px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-base outline-none focus:border-blue-400 md:text-sm"
           />
           <button
             disabled={!input.trim() || muted || sending}
