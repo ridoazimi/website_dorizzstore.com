@@ -29,6 +29,7 @@ type AccessResponse = { token: string; socketUrl: string; restriction: Restricti
 type HistoryResponse = { ok: boolean; messages?: CommunityMessage[]; hasMore?: boolean; error?: { message?: string } };
 
 function socketFactory() { return (window as unknown as { io?: SocketFactory }).io; }
+function cursorOf(message: CommunityMessage) { return { id: message.id, createdAt: message.createdAt }; }
 
 async function fetchAccess(): Promise<AccessResponse> {
   const response = await fetch("/api/member/community/token", { method: "POST", cache: "no-store" });
@@ -103,7 +104,22 @@ export default function CommunityClient() {
     setHasMore(!!result.hasMore);
   }
 
-  useEffect(() => { void fetchAccess(); mergeMessages([]); markDeleted("none"); void initialHistory(socketRef.current as CommunitySocket); }, []);
+  async function syncAfter(socket: CommunitySocket) {
+    let latest = messagesRef.current.length ? messagesRef.current[messagesRef.current.length - 1] : undefined;
+    if (!latest) return initialHistory(socket);
+    for (let page = 0; page < 50; page += 1) {
+      const result = await emitAck<HistoryResponse>(socket, "history:list", { direction: "after", cursor: cursorOf(latest), limit: 100 });
+      if (!result.ok) throw new Error(result.error?.message || "Gagal menyinkronkan chat");
+      const incoming = result.messages || [];
+      if (incoming.length) {
+        mergeMessages(incoming);
+        latest = incoming[incoming.length - 1] || latest;
+      }
+      if (!result.hasMore || !incoming.length) break;
+    }
+  }
+
+  useEffect(() => { void fetchAccess(); mergeMessages([]); markDeleted("none"); void initialHistory(socketRef.current as CommunitySocket); void syncAfter(socketRef.current as CommunitySocket); }, []);
   function submit(event: FormEvent) { event.preventDefault(); void emitAck(socketRef.current as CommunitySocket, "message:send", { body: input }); }
   return <form onSubmit={submit}><div>{messages.length} / {restriction.status} / {String(hasMore)}</div><input value={input} onChange={(e)=>setInput(e.target.value)}/><button type="submit">Kirim</button></form>;
 }
