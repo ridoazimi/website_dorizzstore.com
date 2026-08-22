@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "next build",
+    "check:community": "node --check services/community-realtime/server.mjs",
+    "build": "npm run check:community && next build",
     "migrate:deploy": "prisma migrate deploy",
     "start": "next start",
     "lint": "eslint",
