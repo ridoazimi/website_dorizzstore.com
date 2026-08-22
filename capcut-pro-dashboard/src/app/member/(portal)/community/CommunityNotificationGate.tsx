@@ -146,20 +146,27 @@ export default function CommunityNotificationGate({ children }: { children: Reac
 
   if (iosBrowser) {
     return (
-      <div className="mx-auto grid min-h-[65vh] max-w-xl place-items-center px-4 py-10">
-        <div className="w-full rounded-2xl border border-blue-100 bg-white p-6 text-center shadow-sm">
-          <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-blue-50 text-xl">📲</div>
-          <h1 className="text-lg font-black text-slate-950">Tambahkan DorizzStore ke Layar Utama</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Di iPhone, notifikasi Community hanya bisa diaktifkan dari DorizzStore yang dibuka sebagai aplikasi di Home Screen.
-          </p>
-          <div className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-left text-sm leading-6 text-slate-700">
-            <p><strong>1.</strong> Tekan tombol <strong>Bagikan</strong> di Safari.</p>
-            <p><strong>2.</strong> Pilih <strong>Tambahkan ke Layar Utama</strong>.</p>
-            <p><strong>3.</strong> Buka DorizzStore dari ikon di Home Screen.</p>
-            <p><strong>4.</strong> Masuk Community lalu tekan <strong>Izinkan Notifikasi</strong>.</p>
+      <div className="fixed inset-0 z-[100] flex items-end bg-slate-950/35 px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur-[2px]">
+        <div className="w-full rounded-[28px] bg-white px-5 pb-5 pt-3 shadow-2xl">
+          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
+          <div className="flex items-center gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-blue-50 text-xl">📲</div>
+            <div className="min-w-0 text-left">
+              <h1 className="text-base font-black text-slate-950">Tambahkan ke Layar Utama</h1>
+              <p className="mt-0.5 text-xs leading-5 text-slate-500">Pasang DorizzStore agar notifikasi Community bisa diaktifkan.</p>
+            </div>
           </div>
-          <p className="mt-4 text-xs text-slate-500">Community tetap dikunci sampai notifikasi diizinkan.</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="rounded-2xl bg-slate-50 px-3 py-3 text-center">
+              <div className="text-xl">⬆️</div>
+              <p className="mt-1 text-xs font-bold text-slate-700">1. Tekan Share</p>
+            </div>
+            <div className="rounded-2xl bg-blue-50 px-3 py-3 text-center">
+              <div className="text-xl">➕</div>
+              <p className="mt-1 text-xs font-bold text-blue-700">2. Add to Home Screen</p>
+            </div>
+          </div>
+          <p className="mt-3 text-center text-[11px] text-slate-400">Setelah terpasang, buka DorizzStore dari ikon Home Screen.</p>
         </div>
       </div>
     );
