@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Activity, Bell, CircleHelp, Gift, LayoutDashboard, LogOut, Menu, Medal, ShieldCheck, Sparkles, UserRound, Users, WalletCards, X } from "lucide-react";
+import { Activity, Bell, CircleHelp, Gift, KeyRound, LayoutDashboard, LogOut, Mail, Menu, Medal, Phone, ShieldCheck, Sparkles, UserRound, Users, WalletCards, X } from "lucide-react";
 
 const items = [
   ["/member/dashboard","Dashboard",LayoutDashboard],
@@ -24,9 +24,13 @@ export default function MemberPortalShell({ children }: { children: React.ReactN
   const pathname = usePathname();
   const router = useRouter();
   const [open,setOpen] = useState(false);
+  const [profileOpen,setProfileOpen] = useState(false);
+  const [profile,setProfile] = useState<any>(null);
   const [unread,setUnread] = useState(0);
 
   useEffect(()=>{ fetch("/api/member/notifications",{cache:"no-store"}).then(r=>r.ok?r.json():[]).then((x:any[])=>setUnread(Array.isArray(x)?x.filter(n=>!n.is_read).length:0)).catch(()=>{}); },[pathname]);
+  useEffect(()=>{ fetch("/api/member/portal/profile",{cache:"no-store"}).then(r=>r.ok?r.json():null).then((x:any)=>setProfile(x?.member||null)).catch(()=>{}); },[pathname]);
+  useEffect(()=>{setProfileOpen(false)},[pathname]);
 
   async function logout(){ await fetch("/api/member/auth/logout",{method:"POST"}); router.replace("/member"); router.refresh(); }
 
@@ -50,7 +54,20 @@ export default function MemberPortalShell({ children }: { children: React.ReactN
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-blue-100 bg-white/95 px-4 backdrop-blur md:px-6 lg:px-8">
         <button aria-label="Buka menu" onClick={()=>setOpen(true)} className="grid h-10 w-10 place-items-center rounded-lg border border-blue-100 bg-white text-slate-700 shadow-sm lg:hidden"><Menu size={18}/></button>
         <div className="hidden lg:block"><p className="text-sm font-bold text-slate-950">Member DorizzStore</p><p className="text-xs text-slate-400">Referral • Poin • Reward</p></div>
-        <Link href="/member/notifications" className="relative grid h-10 w-10 place-items-center rounded-lg border border-blue-100 bg-white text-slate-500 shadow-sm hover:text-blue-600"><Bell size={18}/>{unread>0&&<span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-blue-500"/>}</Link>
+        <div className="relative flex items-center gap-2">
+          <Link href="/member/notifications" className="relative grid h-10 w-10 place-items-center rounded-lg border border-blue-100 bg-white text-slate-500 shadow-sm hover:text-blue-600"><Bell size={18}/>{unread>0&&<span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-blue-500"/>}</Link>
+          <button aria-label="Buka profil" onClick={()=>setProfileOpen(v=>!v)} className="grid h-10 w-10 place-items-center rounded-full bg-gradient-to-br from-blue-600 to-sky-400 text-sm font-black text-white shadow-sm shadow-blue-500/20">{profile?.name?.trim()?.charAt(0)?.toUpperCase()||<UserRound size={18}/>}</button>
+          {profileOpen&&<div className="absolute right-0 top-12 z-50 w-[300px] overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-[0_18px_60px_rgba(15,23,42,.14)]">
+            <div className="border-b border-slate-100 bg-gradient-to-br from-blue-50 to-sky-50 p-4"><div className="flex items-center gap-3"><div className="grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-blue-600 to-sky-400 font-black text-white">{profile?.name?.trim()?.charAt(0)?.toUpperCase()||"M"}</div><div className="min-w-0"><p className="truncate font-black text-slate-950">{profile?.name||"Member DorizzStore"}</p><p className="text-xs text-slate-500">Profil Member</p></div></div></div>
+            <div className="space-y-1 p-3">
+              <div className="flex items-start gap-3 rounded-xl px-3 py-2.5"><Mail size={16} className="mt-0.5 shrink-0 text-blue-500"/><div className="min-w-0"><p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Email</p><p className="truncate text-sm font-semibold text-slate-700">{profile?.email||"-"}</p></div></div>
+              <div className="flex items-start gap-3 rounded-xl px-3 py-2.5"><Phone size={16} className="mt-0.5 shrink-0 text-blue-500"/><div className="min-w-0"><p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">No. HP</p><p className="text-sm font-semibold text-slate-700">{profile?.whatsapp||"-"}</p></div></div>
+              <div className="flex items-start gap-3 rounded-xl px-3 py-2.5"><KeyRound size={16} className="mt-0.5 shrink-0 text-blue-500"/><div><p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Password</p><p className="text-sm font-semibold tracking-widest text-slate-700">••••••••</p></div></div>
+              <div className="flex items-start gap-3 rounded-xl px-3 py-2.5"><UserRound size={16} className="mt-0.5 shrink-0 text-blue-500"/><div className="min-w-0"><p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Nama</p><p className="truncate text-sm font-semibold text-slate-700">{profile?.name||"-"}</p></div></div>
+            </div>
+            <div className="border-t border-slate-100 p-3"><Link href="/member/profile" className="flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-blue-600 to-sky-400 px-4 py-2.5 text-sm font-black text-white">Kelola Profil & Password</Link></div>
+          </div>}
+        </div>
       </header>
       <main className="mx-auto w-full max-w-[1500px] px-4 py-5 md:px-6 md:py-7 lg:px-8">{children}</main>
     </div>
